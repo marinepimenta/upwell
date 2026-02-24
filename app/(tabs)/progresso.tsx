@@ -8,12 +8,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { LineChart } from 'react-native-chart-kit';
+import { Ionicons } from '@expo/vector-icons';
 import { Text as ThemedText } from '@/components/Themed';
-import { colors, gradients, shadows, radius, spacing, typography } from '@/constants/theme';
+import { colors, shadows, radius, spacing, typography } from '@/constants/theme';
 import { useFadeSlideIn } from '@/hooks/useEntrance';
 import {
   getOnboardingData,
@@ -26,24 +26,58 @@ import {
   getContextosFrequentes,
 } from '@/utils/storage';
 
-const chartWidth = Dimensions.get('window').width - spacing.lg * 2 - 32;
+const chartWidth = Dimensions.get('window').width - 80;
 
-// Dados mockados para o gráfico (8 pontos semanais)
+// Dados mockados: 8 pontos S1–S8
 const MOCK_WEIGHT_DATA = [82, 81.5, 81.2, 80.8, 80.9, 80.5, 80.2, 80.0];
+const CHART_LABELS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8'];
+
+// Sombra md do design system
+const shadowMd = {
+  shadowColor: '#5C7A5C',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.08,
+  shadowRadius: 12,
+  elevation: 4,
+};
 
 const chartConfig = {
   backgroundColor: 'transparent',
-  backgroundGradientFrom: 'transparent',
-  backgroundGradientTo: 'transparent',
+  backgroundGradientFrom: '#FFFFFF',
+  backgroundGradientTo: '#FFFFFF',
   decimalPlaces: 1,
-  color: () => colors.sageDark,
-  labelColor: () => colors.textSecondary,
-  propsForDots: { r: '4' },
-  fillShadowGradient: colors.sageLight,
-  fillShadowGradientOpacity: 0.3,
+  color: () => '#5C7A5C',
+  labelColor: () => '#6B6B6B',
+  strokeWidth: 2,
+  propsForDots: { r: '5', strokeWidth: '2', stroke: '#5C7A5C', fill: '#5C7A5C' },
+  propsForBackgroundLines: { stroke: 'transparent' },
+  fillShadowGradient: '#8FAF8F',
+  fillShadowGradientOpacity: 0.12,
 };
 
 const emptyMessage = 'Faça seu primeiro check-in para começar a ver seu progresso aqui 🌱';
+
+const WEEKDAY_LABELS = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
+
+function getCalendarGrid(
+  monthCalendar: { dateStr: string; dayOfMonth: number; done: boolean; shield: boolean }[],
+  year: number,
+  month: number
+): (typeof monthCalendar[0] | null)[][] {
+  const firstDay = new Date(year, month - 1, 1);
+  const firstWeekday = (firstDay.getDay() + 6) % 7; // 0 = Monday
+  const slots: (typeof monthCalendar[0] | null)[] = [
+    ...Array(firstWeekday).fill(null),
+    ...monthCalendar,
+  ];
+  const rows: (typeof monthCalendar[0] | null)[][] = [];
+  for (let i = 0; i < slots.length; i += 7) {
+    const row = slots.slice(i, i + 7);
+    while (row.length < 7) row.push(null);
+    rows.push(row);
+  }
+  return rows;
+}
 
 export default function ProgressoScreen() {
   const [loading, setLoading] = useState(true);
@@ -56,6 +90,7 @@ export default function ProgressoScreen() {
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
   const monthCalendar = getMonthCalendar(checkins, year, month);
+  const calendarGrid = getCalendarGrid(monthCalendar, year, month);
   const checkinsNoMes = getCheckinsForMonth(checkins, year, month);
   const bestStreakMonth = getBestStreakInMonth(checkins, year, month);
   const metrics = getMonthMetrics(checkins, year, month);
@@ -108,44 +143,49 @@ export default function ProgressoScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient colors={gradients.gradientHeader} style={styles.header}>
+        <View style={styles.header}>
           <ThemedText style={styles.title}>Seu progresso</ThemedText>
           <ThemedText style={styles.subtitle}>Tudo que você construiu até aqui 💚</ThemedText>
-        </LinearGradient>
+        </View>
 
-        {/* Bloco 1 — Gráfico de peso */}
-        <Animated.View style={[styles.card, entrance0]}>
-          <ThemedText style={styles.cardTitle}>Evolução do peso</ThemedText>
+        {/* Card Evolução do peso */}
+        <Animated.View style={[styles.cardPeso, entrance0]}>
+          <Text style={styles.cardPesoTitle}>Evolução do peso</Text>
           {hasAnyCheckin ? (
             <>
               <LineChart
                 data={{
-                  labels: ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8'],
+                  labels: CHART_LABELS,
                   datasets: [{ data: MOCK_WEIGHT_DATA }],
                 }}
                 width={chartWidth}
-                height={200}
+                height={180}
                 chartConfig={chartConfig}
                 bezier
                 style={styles.chart}
                 withInnerLines={false}
                 withOuterLines={false}
+                withVerticalLines={false}
+                withHorizontalLines={false}
+                withVerticalLabels={true}
+                withHorizontalLabels={false}
                 fromZero={false}
                 yAxisSuffix=" kg"
               />
               <View style={styles.pesoRow}>
-                <ThemedText style={styles.pesoLabel}>Peso inicial: {pesoIni.toFixed(1)} kg</ThemedText>
-                <ThemedText style={styles.pesoLabel}>Peso atual: {pesoCur.toFixed(1)} kg</ThemedText>
+                <Text style={styles.pesoLabel}>Peso inicial: {pesoIni.toFixed(pesoIni % 1 === 0 ? 0 : 1)} kg</Text>
+                <Text style={styles.pesoLabel}>Peso atual: {pesoCur.toFixed(1)} kg</Text>
               </View>
-              <ThemedText
+              <Text
                 style={[
                   styles.variacao,
                   variacao <= 0 ? styles.variacaoNegativa : styles.variacaoPositiva,
-                ]}>
+                ]}
+              >
                 {variacao <= 0
                   ? `▼ ${Math.abs(variacao).toFixed(1)} kg desde o início 🎉`
                   : `▲ ${variacao.toFixed(1)} kg desde o início`}
-              </ThemedText>
+              </Text>
             </>
           ) : (
             <ThemedText style={styles.emptyText}>{emptyMessage}</ThemedText>
@@ -157,76 +197,84 @@ export default function ProgressoScreen() {
           <ThemedText style={styles.cardTitle}>Seus check-ins</ThemedText>
           {hasAnyCheckin ? (
             <>
-              <View style={styles.calendar}>
-                {monthCalendar.map((d) => (
-                  <View key={d.dateStr} style={styles.calendarDayWrap}>
-                    {d.done && !d.shield ? (
-                      <LinearGradient
-                        colors={gradients.gradientSage}
-                        style={[styles.calendarDay, styles.calendarDayDone]}
-                      >
-                        <Text style={styles.calendarDayNumFilled}>{d.dayOfMonth}</Text>
-                      </LinearGradient>
-                    ) : d.shield ? (
-                      <LinearGradient
-                        colors={gradients.gradientTerracotta}
-                        style={[styles.calendarDay, styles.calendarDayShield]}
-                      >
-                        <Text style={styles.calendarDayNumFilled}>{d.dayOfMonth}</Text>
-                      </LinearGradient>
-                    ) : (
-                      <View style={[styles.calendarDay, styles.calendarDayEmpty]}>
-                        <Text style={styles.calendarDayNum}>{d.dayOfMonth}</Text>
+              <View style={styles.calendarHeader}>
+                {WEEKDAY_LABELS.map((l, i) => (
+                  <ThemedText key={i} style={styles.calendarWeekdayLabel}>{l}</ThemedText>
+                ))}
+              </View>
+              <View style={styles.calendarGrid}>
+                {calendarGrid.map((row, rowIndex) => (
+                  <View key={rowIndex} style={styles.calendarRow}>
+                    {row.map((cell, colIndex) => (
+                      <View key={`${rowIndex}-${colIndex}`} style={styles.calendarDayWrap}>
+                        {cell === null ? (
+                          <View style={[styles.calendarDay, styles.calendarDayEmpty]} />
+                        ) : cell.done && !cell.shield ? (
+                          <View style={[styles.calendarDay, styles.calendarDayDone]}>
+                            <Text style={styles.calendarDayNumFilled}>{cell.dayOfMonth}</Text>
+                          </View>
+                        ) : cell.shield ? (
+                          <View style={[styles.calendarDay, styles.calendarDayShield]}>
+                            <Text style={styles.calendarDayNumFilled}>{cell.dayOfMonth}</Text>
+                          </View>
+                        ) : (
+                          <View style={[styles.calendarDay, styles.calendarDayEmpty]}>
+                            <Text style={styles.calendarDayNum}>{cell.dayOfMonth}</Text>
+                          </View>
+                        )}
                       </View>
-                    )}
+                    ))}
                   </View>
                 ))}
               </View>
-              <ThemedText style={styles.calendarSummary}>
-                {checkinsNoMes.length} check-ins esse mês
-              </ThemedText>
-              <ThemedText style={styles.calendarSummary}>
-                Sua melhor sequência: {bestStreakMonth} dias
-              </ThemedText>
+              <View style={styles.calendarSummaryRow}>
+                <ThemedText style={styles.calendarSummaryLeft}>
+                  {checkinsNoMes.length} check-ins esse mês
+                </ThemedText>
+                <ThemedText style={styles.calendarSummaryRight}>
+                  Melhor sequência: {bestStreakMonth} dias
+                </ThemedText>
+              </View>
             </>
           ) : (
             <ThemedText style={styles.emptyText}>{emptyMessage}</ThemedText>
           )}
         </Animated.View>
 
-        {/* Bloco 3 — Métricas resumidas */}
+        {/* Bloco 3 — Seus hábitos esse mês */}
         <Animated.View style={[styles.card, entrance2]}>
           <ThemedText style={styles.cardTitle}>Seus hábitos esse mês</ThemedText>
           {hasAnyCheckin ? (
             <>
-              <View style={styles.metricsGrid}>
-                <View style={styles.metricBox}>
-                  <Text style={styles.metricIcon}>🏋️</Text>
-                  <ThemedText style={styles.metricNumber}>{metrics.treinos}</ThemedText>
-                  <ThemedText style={styles.metricLabel}>treinos</ThemedText>
+              <View style={styles.habitsGrid}>
+                <View style={styles.habitCard}>
+                  <Ionicons name="barbell-outline" size={28} color={colors.sage} style={styles.habitIcon} />
+                  <ThemedText style={styles.habitNumber}>{metrics.treinos}</ThemedText>
+                  <ThemedText style={styles.habitLabel}>treinos</ThemedText>
                 </View>
-                <View style={styles.metricBox}>
-                  <Text style={styles.metricIcon}>💧</Text>
-                  <ThemedText style={styles.metricNumber}>{metrics.agua}</ThemedText>
-                  <ThemedText style={styles.metricLabel}>dias com água</ThemedText>
+                <View style={styles.habitCard}>
+                  <Ionicons name="water-outline" size={28} color={colors.sage} style={styles.habitIcon} />
+                  <ThemedText style={styles.habitNumber}>{metrics.agua}</ThemedText>
+                  <ThemedText style={styles.habitLabel}>dias com água</ThemedText>
                 </View>
-                <View style={styles.metricBox}>
-                  <Text style={styles.metricIcon}>😴</Text>
-                  <ThemedText style={styles.metricNumber}>{metrics.dormiuBem}</ThemedText>
-                  <ThemedText style={styles.metricLabel}>noites bem dormidas</ThemedText>
+                <View style={styles.habitCard}>
+                  <Ionicons name="moon-outline" size={28} color={colors.sage} style={styles.habitIcon} />
+                  <ThemedText style={styles.habitNumber}>{metrics.dormiuBem}</ThemedText>
+                  <ThemedText style={styles.habitLabel}>noites bem dormidas</ThemedText>
                 </View>
-                <View style={styles.metricBox}>
-                  <Text style={styles.metricIcon}>🍽️</Text>
-                  <ThemedText style={styles.metricNumber}>{metrics.alimentacao}</ThemedText>
-                  <ThemedText style={styles.metricLabel}>dias na alimentação</ThemedText>
+                <View style={styles.habitCard}>
+                  <Ionicons name="restaurant-outline" size={28} color={colors.sage} style={styles.habitIcon} />
+                  <ThemedText style={styles.habitNumber}>{metrics.alimentacao}</ThemedText>
+                  <ThemedText style={styles.habitLabel}>dias na alimentação</ThemedText>
                 </View>
               </View>
-              <View style={styles.contextoCard}>
-                <ThemedText style={styles.contextoText}>
+              <View style={styles.insightBox}>
+                <Ionicons name="bulb-outline" size={24} color={colors.sageDark} style={styles.insightIcon} />
+                <ThemedText style={styles.insightText}>
                   {contextosFreq.length >= 2
-                    ? `Contexto alimentar: os momentos mais frequentes foram ${contextosFreq[0]} e ${contextosFreq[1]}.`
+                    ? `Seus momentos de desafio alimentar mais frequentes foram em ${contextosFreq[0]} e ${contextosFreq[1]}.`
                     : contextosFreq.length === 1
-                      ? `Contexto alimentar: o momento mais frequente foi ${contextosFreq[0]}.`
+                      ? `Seus momentos de desafio alimentar mais frequentes foram em ${contextosFreq[0]}.`
                       : 'Continue fazendo check-ins para ver seus padrões aqui.'}
                 </ThemedText>
               </View>
@@ -260,55 +308,70 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    paddingTop: spacing.md,
-    paddingBottom: 12,
-    paddingHorizontal: spacing.sm,
-    marginBottom: 12,
-    borderRadius: radius.card,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: 0,
+    marginBottom: 4,
   },
   title: {
-    ...typography.title,
+    fontSize: 28,
     fontWeight: '700',
     color: colors.text,
     marginBottom: spacing.xs,
   },
   subtitle: {
-    ...typography.bodySmall,
+    fontSize: 15,
     color: colors.textSecondary,
   },
   card: {
     backgroundColor: colors.white,
-    borderRadius: radius.card,
+    borderRadius: 20,
     padding: spacing.lg,
     marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
     ...shadows.card,
   },
+  cardPeso: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#E8EDE8',
+    ...shadowMd,
+  },
+  cardPesoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 16,
+  },
   cardTitle: {
-    ...typography.titleSmall,
+    fontSize: 18,
+    fontWeight: '700',
     color: colors.text,
     marginBottom: spacing.md,
   },
   chart: {
-    marginVertical: spacing.sm,
-    borderRadius: radius.card,
+    marginVertical: 0,
+    borderRadius: radius.sm,
   },
   pesoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: spacing.sm,
+    marginTop: 16,
   },
   pesoLabel: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#6B6B6B',
   },
   variacao: {
-    ...typography.label,
-    marginTop: spacing.xs,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 6,
   },
   variacaoNegativa: {
-    color: colors.sageDark,
+    color: '#5C7A5C',
   },
   variacaoPositiva: {
     color: colors.terracotta,
@@ -324,31 +387,70 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
   },
-  calendarDayWrap: {
-    width: 38,
-    height: 38,
+  calendarHeader: {
+    flexDirection: 'row',
+    marginBottom: 8,
   },
-  calendarDay: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  calendarWeekdayLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  calendarGrid: {
+    marginBottom: spacing.md,
+  },
+  calendarRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+    gap: 6,
+  },
+  calendarDayWrap: {
+    flex: 1,
+    aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  calendarDayDone: {},
-  calendarDayShield: {},
+  calendarDay: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayDone: {
+    backgroundColor: colors.sageDark,
+  },
+  calendarDayShield: {
+    backgroundColor: colors.terracottaLight,
+  },
   calendarDayEmpty: {
     backgroundColor: '#F0F0F0',
   },
   calendarDayNum: {
-    ...typography.caption,
-    color: colors.text,
+    fontSize: 14,
     fontWeight: '500',
+    color: colors.text,
   },
   calendarDayNumFilled: {
-    ...typography.caption,
-    color: colors.white,
+    fontSize: 14,
     fontWeight: '600',
+    color: colors.white,
+  },
+  calendarSummaryRow: {
+    flexDirection: 'column',
+    marginTop: spacing.sm,
+    gap: 6,
+  },
+  calendarSummaryLeft: {
+    fontSize: 14,
+    color: colors.text,
+  },
+  calendarSummaryRight: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.sageDark,
   },
   calendarSummary: {
     ...typography.bodySmall,
@@ -382,6 +484,52 @@ const styles = StyleSheet.create({
   metricLabel: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  habitsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: spacing.md,
+  },
+  habitCard: {
+    width: '47%',
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    ...shadows.card,
+  },
+  habitIcon: {
+    marginBottom: 10,
+  },
+  habitNumber: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.sageDark,
+    marginBottom: 4,
+  },
+  habitLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  insightBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.sageLight,
+    borderRadius: 16,
+    padding: spacing.md,
+    gap: 12,
+  },
+  insightIcon: {
+    marginTop: 2,
+  },
+  insightText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.sageDark,
   },
   contextoCard: {
     backgroundColor: colors.sageLight,

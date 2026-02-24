@@ -10,54 +10,56 @@ import {
   ScrollView,
   Modal,
   Pressable,
+  ViewStyle,
+  TextStyle,
+  StyleProp,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { colors, gradients } from '@/constants/theme';
-import { useFadeSlideIn, usePressScale } from '@/hooks/useEntrance';
+import { colors, gradients, spacing } from '@/constants/theme';
 
 const USER_LOGGED_IN_KEY = '@upwell:user_logged_in';
 const USER_EMAIL_KEY = '@upwell:user_email';
+
+const CARD_MARGIN_H = 24;
+const GAP_24 = 24;
+const GAP_12 = 12;
+const ON_DARK = '#FFFFFF';
+const ON_DARK_SUBTLE = 'rgba(255,255,255,0.8)';
+const INPUT_PLACEHOLDER = 'rgba(255,255,255,0.6)';
+const DIVIDER_LINE = 'rgba(255,255,255,0.25)';
+const FOOTER_HINT = 'rgba(255,255,255,0.7)';
+const ERROR_COLOR = 'rgba(255,99,99,0.9)';
+const CARD_GLASS = {
+  backgroundColor: 'rgba(255,255,255,0.15)',
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.3)',
+  borderRadius: 24,
+  padding: 28,
+};
 
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [forgotModalVisible, setForgotModalVisible] = useState(false);
-  const [googleModalVisible, setGoogleModalVisible] = useState(false);
-  const [appleModalVisible, setAppleModalVisible] = useState(false);
-
-  const pressEntrar = usePressScale();
-  const pressEsqueci = usePressScale();
-  const pressGoogle = usePressScale();
-  const pressApple = usePressScale();
-  const pressCriarConta = usePressScale();
-
-  const entrance0 = useFadeSlideIn(0);
-  const entrance1 = useFadeSlideIn(80);
-  const entrance2 = useFadeSlideIn(160);
-  const entrance3 = useFadeSlideIn(240);
-  const entrance4 = useFadeSlideIn(320);
-  const entrance5 = useFadeSlideIn(400);
-  const entrance6 = useFadeSlideIn(480);
-  const entrance7 = useFadeSlideIn(560);
-  const entrance8 = useFadeSlideIn(640);
-  const entrance9 = useFadeSlideIn(720);
+  const [socialModalVisible, setSocialModalVisible] = useState(false);
 
   const handleEntrar = async () => {
-    setError('');
+    setEmailError('');
+    setPasswordError('');
     if (!email.trim()) {
-      setError('Preencha seu email.');
+      setEmailError('Preencha seu email.');
       return;
     }
     if (!password.trim()) {
-      setError('Preencha sua senha.');
+      setPasswordError('Preencha sua senha.');
       return;
     }
     try {
@@ -65,187 +67,163 @@ export default function LoginScreen() {
       await AsyncStorage.setItem(USER_EMAIL_KEY, email.trim());
       router.replace('/(tabs)');
     } catch (e) {
-      setError('Não foi possível entrar. Tente novamente.');
+      setPasswordError('Não foi possível entrar. Tente novamente.');
     }
   };
 
   return (
-    <LinearGradient colors={gradients.gradientSage} style={styles.gradient}>
-      <SafeAreaView style={styles.safe} edges={['top']}>
+    <LinearGradient colors={gradients.gradientSage} style={styles.gradient as ViewStyle}>
+      <SafeAreaView style={styles.safe as ViewStyle} edges={['top']}>
         <KeyboardAvoidingView
-          style={styles.keyboard}
+          style={styles.keyboard as ViewStyle}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={styles.scrollContent as ViewStyle}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <Animated.View style={[styles.header, entrance0]}>
-              <Ionicons name="leaf" size={40} color="#FFFFFF" />
-              <RNText style={styles.logoText}>UpWell</RNText>
-            </Animated.View>
+            <View style={styles.branding as ViewStyle}>
+              <View>
+                <Ionicons name="leaf" size={44} color={ON_DARK} />
+              </View>
+              <View>
+                <RNText style={styles.logoText as TextStyle}>UpWell</RNText>
+              </View>
+              <View>
+                <RNText style={styles.tagline as TextStyle}>Sua jornada de 90 dias</RNText>
+              </View>
+            </View>
 
-            <Animated.View style={[styles.card, entrance1]}>
-              <RNText style={styles.title}>Bem-vinda de volta</RNText>
-              <RNText style={styles.subtitle}>Continue sua jornada 🌿</RNText>
-              <View style={styles.spacer} />
+            <View style={styles.card as ViewStyle}>
+              <View>
+                <RNText style={styles.title as TextStyle}>Bem-vinda de volta</RNText>
+              </View>
+              <View>
+                <RNText style={styles.subtitle as TextStyle}>Continue sua jornada 🍃</RNText>
+              </View>
+              <View style={styles.titleGap as ViewStyle} />
 
-              <Animated.View style={entrance2}>
-                <View style={styles.inputWrap}>
-                  <Ionicons name="mail-outline" size={18} color="#FFFFFF" style={styles.inputIcon} />
+              <View>
+                <View style={styles.inputWrap as ViewStyle}>
+                  <Ionicons name="mail-outline" size={18} color={ON_DARK} style={styles.inputIcon as TextStyle} />
                   <TextInput
-                    style={styles.input}
-                    placeholder="Seu email"
-                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    style={styles.input as TextStyle}
+                    placeholder="Email"
+                    placeholderTextColor={INPUT_PLACEHOLDER}
                     value={email}
-                    onChangeText={(t) => { setEmail(t); setError(''); }}
+                    onChangeText={(t) => {
+                      setEmail(t);
+                      setEmailError('');
+                    }}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
                   />
                 </View>
-              </Animated.View>
+                {emailError ? (
+                  <View style={styles.inlineErrorWrap as ViewStyle}>
+                    <Ionicons name="alert-circle-outline" size={14} color={ERROR_COLOR} />
+                    <RNText style={styles.inlineErrorText as TextStyle}>{emailError}</RNText>
+                  </View>
+                ) : null}
+              </View>
 
-              <Animated.View style={entrance3}>
-                <View style={styles.inputWrap}>
-                  <Ionicons name="lock-closed-outline" size={18} color="#FFFFFF" style={styles.inputIcon} />
+              <View style={styles.inputGap as ViewStyle} />
+
+              <View>
+                <View style={styles.inputWrap as ViewStyle}>
+                  <Ionicons name="lock-closed-outline" size={18} color={ON_DARK} style={styles.inputIcon as TextStyle} />
                   <TextInput
-                    style={[styles.input, styles.inputPassword]}
-                    placeholder="Sua senha"
-                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    style={[styles.input, styles.inputPassword] as StyleProp<TextStyle>}
+                    placeholder="Senha"
+                    placeholderTextColor={INPUT_PLACEHOLDER}
                     value={password}
-                    onChangeText={(t) => { setPassword(t); setError(''); }}
+                    onChangeText={(t) => {
+                      setPassword(t);
+                      setPasswordError('');
+                    }}
                     secureTextEntry={!showPassword}
                   />
                   <TouchableOpacity
                     onPress={() => setShowPassword((v) => !v)}
-                    style={styles.eyeButton}
+                    style={styles.eyeButton as ViewStyle}
                     hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   >
-                    <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={20}
-                      color="rgba(255,255,255,0.8)"
-                    />
+                    <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={ON_DARK_SUBTLE} />
                   </TouchableOpacity>
                 </View>
-              </Animated.View>
-
-              <Animated.View style={[styles.esqueciWrap, entrance4]}>
-                <Animated.View style={pressEsqueci.animatedStyle}>
-                  <TouchableOpacity
-                    onPressIn={pressEsqueci.onPressIn}
-                    onPressOut={pressEsqueci.onPressOut}
-                    onPress={() => setForgotModalVisible(true)}
-                    activeOpacity={1}
-                  >
-                    <RNText style={styles.esqueciText}>Esqueci minha senha</RNText>
-                  </TouchableOpacity>
-                </Animated.View>
-              </Animated.View>
-
-              {error ? <RNText style={styles.errorText}>{error}</RNText> : null}
-
-              <Animated.View style={[styles.btnWrap, entrance5]}>
-                <Animated.View style={pressEntrar.animatedStyle}>
-                  <TouchableOpacity
-                    onPressIn={pressEntrar.onPressIn}
-                    onPressOut={pressEntrar.onPressOut}
-                    onPress={handleEntrar}
-                    style={styles.btnEntrar}
-                    activeOpacity={1}
-                  >
-                    <RNText style={styles.btnEntrarText}>Entrar</RNText>
-                  </TouchableOpacity>
-                </Animated.View>
-              </Animated.View>
-
-              <View style={styles.dividerWrap}>
-                <View style={styles.dividerLine} />
-                <RNText style={styles.dividerText}>ou continue com</RNText>
-                <View style={styles.dividerLine} />
+                {passwordError ? (
+                  <View style={styles.inlineErrorWrap as ViewStyle}>
+                    <Ionicons name="alert-circle-outline" size={14} color={ERROR_COLOR} />
+                    <RNText style={styles.inlineErrorText as TextStyle}>{passwordError}</RNText>
+                  </View>
+                ) : null}
               </View>
 
-              <Animated.View style={[styles.socialWrap, entrance6]}>
-                <Animated.View style={pressGoogle.animatedStyle}>
-                  <TouchableOpacity
-                    onPressIn={pressGoogle.onPressIn}
-                    onPressOut={pressGoogle.onPressOut}
-                    onPress={() => setGoogleModalVisible(true)}
-                    style={styles.btnSocial}
-                    activeOpacity={1}
-                  >
-                    <RNText style={styles.googleIcon}>G</RNText>
-                    <RNText style={styles.btnSocialText}>Continuar com Google</RNText>
-                  </TouchableOpacity>
-                </Animated.View>
-              </Animated.View>
-
-              <Animated.View style={[styles.socialWrap, entrance7]}>
-                <Animated.View style={pressApple.animatedStyle}>
-                  <TouchableOpacity
-                    onPressIn={pressApple.onPressIn}
-                    onPressOut={pressApple.onPressOut}
-                    onPress={() => setAppleModalVisible(true)}
-                    style={styles.btnSocial}
-                    activeOpacity={1}
-                  >
-                    <Ionicons name="logo-apple" size={20} color="#FFFFFF" style={styles.appleIcon} />
-                    <RNText style={styles.btnSocialText}>Continuar com Apple</RNText>
-                  </TouchableOpacity>
-                </Animated.View>
-              </Animated.View>
-            </Animated.View>
-
-            <Animated.View style={[styles.footer, entrance8]}>
-              <RNText style={styles.footerText}>Não tem conta? </RNText>
-              <Animated.View style={pressCriarConta.animatedStyle}>
-                <TouchableOpacity
-                  onPressIn={pressCriarConta.onPressIn}
-                  onPressOut={pressCriarConta.onPressOut}
-                  onPress={() => router.push('/cadastro')}
-                  activeOpacity={1}
-                >
-                  <RNText style={styles.footerLink}>Criar conta</RNText>
+              <View style={[styles.esqueciWrap as ViewStyle]}>
+                <TouchableOpacity onPress={() => setForgotModalVisible(true)} activeOpacity={0.8}>
+                  <RNText style={styles.esqueciText as TextStyle}>Esqueci minha senha</RNText>
                 </TouchableOpacity>
-              </Animated.View>
-            </Animated.View>
+              </View>
+
+              <View style={[styles.btnWrap as ViewStyle]}>
+                <TouchableOpacity onPress={handleEntrar} style={styles.btnEntrar as ViewStyle} activeOpacity={0.8}>
+                  <RNText style={styles.btnEntrarText as TextStyle}>Entrar</RNText>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.dividerWrap as ViewStyle]}>
+                <View style={styles.dividerLine as ViewStyle} />
+                <RNText style={styles.dividerText as TextStyle}>ou continue com</RNText>
+                <View style={styles.dividerLine as ViewStyle} />
+              </View>
+
+              <View style={[styles.socialRow as ViewStyle]}>
+                <View style={[styles.socialButtonWrap as ViewStyle]}>
+                  <TouchableOpacity onPress={() => setSocialModalVisible(true)} style={styles.btnSocial as ViewStyle} activeOpacity={0.8}>
+                    <RNText style={styles.googleLetter as TextStyle}>G</RNText>
+                    <RNText style={styles.btnSocialText as TextStyle}>Google</RNText>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.socialGap as ViewStyle} />
+                <View style={[styles.socialButtonWrap as ViewStyle]}>
+                  <TouchableOpacity onPress={() => setSocialModalVisible(true)} style={styles.btnSocial as ViewStyle} activeOpacity={0.8}>
+                    <Ionicons name="logo-apple" size={20} color={ON_DARK} style={styles.appleIcon as TextStyle} />
+                    <RNText style={styles.btnSocialText as TextStyle}>Apple</RNText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.footer as ViewStyle]}>
+              <RNText style={styles.footerText as TextStyle}>Não tem conta? </RNText>
+              <TouchableOpacity onPress={() => router.push('/cadastro')} activeOpacity={0.8}>
+                <RNText style={styles.footerLink as TextStyle}>Criar conta</RNText>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
 
       <Modal visible={forgotModalVisible} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setForgotModalVisible(false)}>
-          <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-            <RNText style={styles.modalText}>
-              Em breve você poderá redefinir sua senha por email.
-            </RNText>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setForgotModalVisible(false)}>
-              <RNText style={styles.modalBtnText}>OK</RNText>
+        <Pressable style={styles.modalOverlay as ViewStyle} onPress={() => setForgotModalVisible(false)}>
+          <Pressable style={styles.modalBox as ViewStyle} onPress={(e) => e.stopPropagation()}>
+            <RNText style={styles.modalText as TextStyle}>Em breve você poderá redefinir sua senha por email.</RNText>
+            <TouchableOpacity style={styles.modalBtn as ViewStyle} onPress={() => setForgotModalVisible(false)}>
+              <RNText style={styles.modalBtnText as TextStyle}>OK</RNText>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
 
-      <Modal visible={googleModalVisible} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setGoogleModalVisible(false)}>
-          <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-            <RNText style={styles.modalText}>Login com Google será ativado em breve.</RNText>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setGoogleModalVisible(false)}>
-              <RNText style={styles.modalBtnText}>OK</RNText>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={appleModalVisible} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setAppleModalVisible(false)}>
-          <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-            <RNText style={styles.modalText}>Login com Apple será ativado em breve.</RNText>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setAppleModalVisible(false)}>
-              <RNText style={styles.modalBtnText}>OK</RNText>
+      <Modal visible={socialModalVisible} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay as ViewStyle} onPress={() => setSocialModalVisible(false)}>
+          <Pressable style={styles.modalBox as ViewStyle} onPress={(e) => e.stopPropagation()}>
+            <RNText style={styles.modalText as TextStyle}>Em breve 🌿</RNText>
+            <TouchableOpacity style={styles.modalBtn as ViewStyle} onPress={() => setSocialModalVisible(false)}>
+              <RNText style={styles.modalBtnText as TextStyle}>OK</RNText>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -260,40 +238,48 @@ const styles = StyleSheet.create({
   keyboard: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: CARD_MARGIN_H,
     paddingTop: 48,
     paddingBottom: 40,
   },
-  header: {
+  branding: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: GAP_24,
   },
   logoText: {
     fontSize: 36,
     fontWeight: '800',
-    color: '#FFFFFF',
+    lineHeight: 44,
+    color: ON_DARK,
+    letterSpacing: 2,
     marginTop: 8,
-    letterSpacing: 1,
+  },
+  tagline: {
+    fontSize: 15,
+    fontWeight: '400',
+    lineHeight: 22,
+    color: ON_DARK_SUBTLE,
+    marginTop: 4,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 24,
-    padding: 28,
-    marginBottom: 24,
+    ...CARD_GLASS,
+    marginHorizontal: 0,
+    marginBottom: GAP_24,
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
-    color: '#FFFFFF',
+    lineHeight: 32,
+    color: ON_DARK,
   },
   subtitle: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '400',
+    lineHeight: 20,
+    color: ON_DARK_SUBTLE,
     marginTop: 4,
   },
-  spacer: { height: 24 },
+  titleGap: { height: GAP_24 },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -302,35 +288,43 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.3)',
     borderRadius: 12,
     paddingHorizontal: 16,
-    marginBottom: 12,
+    height: 52,
   },
   inputIcon: { marginRight: 12 },
   input: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 0,
     fontSize: 16,
-    color: '#FFFFFF',
+    color: ON_DARK,
   },
   inputPassword: { paddingRight: 8 },
   eyeButton: { padding: 8 },
-  esqueciWrap: { alignItems: 'flex-end', marginBottom: 16 },
-  esqueciText: {
+  inputGap: { height: GAP_12 },
+  inlineErrorWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 6,
+  },
+  inlineErrorText: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.8)',
+    color: ERROR_COLOR,
   },
-  errorText: {
-    fontSize: 14,
-    color: 'rgba(255,99,99,0.9)',
-    marginBottom: 12,
+  esqueciWrap: { alignItems: 'flex-end', marginBottom: spacing.md },
+  esqueciText: {
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 16,
+    color: ON_DARK_SUBTLE,
   },
-  btnWrap: { marginBottom: 20 },
+  btnWrap: { marginBottom: spacing.lg },
   btnEntrar: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.white,
     borderRadius: 12,
     height: 52,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#FFFFFF',
+    shadowColor: colors.white,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -344,55 +338,58 @@ const styles = StyleSheet.create({
   dividerWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: DIVIDER_LINE,
   },
   dividerText: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
+    color: ON_DARK_SUBTLE,
     marginHorizontal: 12,
   },
-  socialWrap: { marginBottom: 12 },
+  socialRow: { flexDirection: 'row', alignItems: 'center' },
+  socialButtonWrap: { flex: 1 },
+  socialGap: { width: GAP_12 },
   btnSocial: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
+    borderColor: 'rgba(255,255,255,0.3)',
     borderRadius: 12,
-    height: 52,
+    height: 48,
   },
-  googleIcon: {
-    fontSize: 20,
+  googleLetter: {
+    fontSize: 18,
     fontWeight: '800',
-    color: '#FFFFFF',
-    marginRight: 10,
+    color: ON_DARK,
+    marginRight: 8,
   },
-  appleIcon: { marginRight: 10 },
+  appleIcon: { marginRight: 8 },
   btnSocialText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: ON_DARK,
   },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
+    marginTop: 20,
   },
   footerText: {
     fontSize: 15,
-    color: 'rgba(255,255,255,0.7)',
+    color: FOOTER_HINT,
   },
   footerLink: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: ON_DARK,
   },
   modalOverlay: {
     flex: 1,

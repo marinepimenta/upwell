@@ -117,6 +117,7 @@ export default function InicioScreen() {
   const weekComplete = last7.filter((d) => d.done).length;
   const treinosWeek = last7Full.filter((c) => c.treinou).length;
   const aguaWeek = last7Full.filter((c) => c.bebeuAgua).length;
+  const sonoWeek = last7Full.filter((c) => c.dormiuBem).length;
   const alimentacaoWeek = last7Full.filter((c) => c.adesaoAlimentar === 'sim').length;
   const diasDesafioAlimentar = last7Full.filter(
     (c) => c.adesaoAlimentar === 'mais_ou_menos' || c.adesaoAlimentar === 'nao'
@@ -241,16 +242,31 @@ export default function InicioScreen() {
           <RNText style={styles.weekSummary}>{weekComplete} de 7 dias completos esta semana.</RNText>
         </Animated.View>
 
-        {/* Card Ritmo da Semana */}
-        <Animated.View style={[styles.cardRitmo, entrance3]}>
+        {/* Card Como você está indo — grid 2x2 */}
+        <Animated.View style={[styles.comoIndoWrap, entrance3]}>
           <Text style={styles.cardTitle}>Como você está indo</Text>
-          <View style={styles.metricsRow}>
-            <RNText style={styles.metric}>🏋️ <RNText style={styles.metricNum}>{treinosWeek}</RNText> treinos</RNText>
-            <RNText style={styles.metric}>💧 <RNText style={styles.metricNum}>{aguaWeek}</RNText> dias com água</RNText>
-            <RNText style={styles.metric}>🍽️ <RNText style={styles.metricNum}>{alimentacaoWeek}</RNText> dias na alimentação</RNText>
+          <View style={styles.comoIndoGrid}>
+            <View style={styles.comoIndoCard}>
+              <Ionicons name="barbell-outline" size={28} color={colors.sageDark} style={styles.comoIndoIcon} />
+              <RNText style={styles.comoIndoNum}>{treinosWeek}</RNText>
+              <RNText style={styles.comoIndoLabel}>treinos</RNText>
+            </View>
+            <View style={styles.comoIndoCard}>
+              <Ionicons name="water-outline" size={28} color={colors.sageDark} style={styles.comoIndoIcon} />
+              <RNText style={styles.comoIndoNum}>{aguaWeek}</RNText>
+              <RNText style={styles.comoIndoLabel}>dias com água</RNText>
+            </View>
+            <View style={styles.comoIndoCard}>
+              <Ionicons name="moon-outline" size={28} color={colors.sageDark} style={styles.comoIndoIcon} />
+              <RNText style={styles.comoIndoNum}>{sonoWeek}</RNText>
+              <RNText style={styles.comoIndoLabel}>noites bem dormidas</RNText>
+            </View>
+            <View style={styles.comoIndoCard}>
+              <Ionicons name="restaurant-outline" size={28} color={colors.sageDark} style={styles.comoIndoIcon} />
+              <RNText style={styles.comoIndoNum}>{alimentacaoWeek}</RNText>
+              <RNText style={styles.comoIndoLabel}>dias na alimentação</RNText>
+            </View>
           </View>
-          <RNText style={styles.desafioText}>{diasDesafioAlimentar} dias com desafio alimentar esta semana</RNText>
-          <Text style={styles.insightRitmo}>Consistência esta semana está acima da média. Continue assim.</Text>
         </Animated.View>
 
         {/* Card Próximos Eventos */}
@@ -599,39 +615,36 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.textSecondary,
   },
-  cardRitmo: {
-    backgroundColor: colors.glassBgRitmo,
-    borderWidth: 1,
-    borderColor: colors.glassBorderRitmo,
-    borderRadius: radius.card,
-    padding: spacing.lg,
+  comoIndoWrap: {
     marginBottom: spacing.md,
-    ...shadows.card,
   },
-  metricsRow: {
+  comoIndoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: spacing.sm,
-    gap: spacing.sm,
+    gap: 12,
+    marginTop: spacing.sm,
   },
-  metric: {
-    ...typography.body,
-    color: colors.text,
+  comoIndoCard: {
+    width: '47%',
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: spacing.lg,
+    ...shadows.card,
   },
-  metricNum: {
-    fontSize: 22,
-    fontWeight: '700',
+  comoIndoIcon: {
+    marginBottom: 10,
+  },
+  comoIndoNum: {
+    fontSize: 40,
+    fontWeight: '800',
     color: colors.sageDark,
+    marginBottom: 4,
   },
-  desafioText: {
-    ...typography.bodySmall,
+  comoIndoLabel: {
+    fontSize: 14,
+    fontWeight: '400',
     color: colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
-  insightRitmo: {
-    ...typography.bodySmall,
-    color: colors.sageDark,
-    fontStyle: 'italic',
+    lineHeight: 20,
   },
   cardEventos: {
     borderLeftWidth: 3,

@@ -1,0 +1,668 @@
+{
+    "meta": {
+      "name": "UpWell Design System",
+      "version": "1.0",
+      "description": "Design system extraído de referências visuais de apps de saúde premium. Combina cards data-driven com hierarquia tipográfica forte, layout em grid e tab bar moderna. Todas as cores adaptadas para a paleta UpWell.",
+      "inspirations": [
+        "App de nutrição: cards pastel com dados, tab bar escura arredondada, layout limpo com muita respiração",
+        "App de serviços: métricas em grid bold, hierarquia tipográfica agressiva, cards de destaque com fundo colorido"
+      ]
+    },
+  
+    "colors": {
+      "background": {
+        "primary": "#FAFAF8",
+        "card": "#FFFFFF",
+        "cardSubtle": "#F5F8F5",
+        "empty": "#F0F0F0"
+      },
+      "sage": {
+        "dark": "#5C7A5C",
+        "medium": "#8FAF8F",
+        "light": "#C8DEC8",
+        "ultraLight": "#EBF3EB"
+      },
+      "terracota": {
+        "primary": "#C4846A",
+        "light": "#F0D4C8",
+        "ultraLight": "#FBF0EB"
+      },
+      "text": {
+        "primary": "#1A1A1A",
+        "secondary": "#6B6B6B",
+        "disabled": "#BDBDBD",
+        "onDark": "#FFFFFF",
+        "onDarkSubtle": "rgba(255,255,255,0.75)"
+      },
+      "border": {
+        "default": "#E8EDE8",
+        "strong": "#C8DEC8",
+        "subtle": "rgba(232,237,232,0.6)"
+      },
+      "gradients": {
+        "sage": ["#5C7A5C", "#8FAF8F"],
+        "terracota": ["#C4846A", "#E8A882"],
+        "card": ["#FFFFFF", "#F5F8F5"],
+        "header": ["#F0F5F0", "#FAFAF8"],
+        "sageReverse": ["#8FAF8F", "#5C7A5C"],
+        "sageSubtle": ["#EBF3EB", "#FAFAF8"]
+      },
+      "semantic": {
+        "success": "#5C7A5C",
+        "warning": "#C4846A",
+        "error": "rgba(180,60,60,0.85)",
+        "info": "#8FAF8F"
+      }
+    },
+  
+    "typography": {
+      "description": "Hierarquia tipográfica bold e clara. Títulos grandes e pesados criam impacto visual imediato. Números de métricas sempre em peso máximo.",
+      "fontWeights": {
+        "regular": "400",
+        "medium": "500",
+        "semibold": "600",
+        "bold": "700",
+        "extrabold": "800"
+      },
+      "scale": {
+        "displayXL": { "size": 48, "weight": "800", "lineHeight": 56, "usage": "Números de destaque, streak count, peso principal" },
+        "displayL": { "size": 36, "weight": "800", "lineHeight": 44, "usage": "Logo, títulos de splash, números de métricas grandes" },
+        "displayM": { "size": 28, "weight": "700", "lineHeight": 36, "usage": "Saudação na home, títulos de seção principais" },
+        "titleL": { "size": 24, "weight": "700", "lineHeight": 32, "usage": "Títulos de tela, cabeçalhos de modal" },
+        "titleM": { "size": 20, "weight": "700", "lineHeight": 28, "usage": "Títulos de card de destaque" },
+        "titleS": { "size": 17, "weight": "600", "lineHeight": 24, "usage": "Títulos de cards normais, labels de botão primário" },
+        "bodyL": { "size": 16, "weight": "400", "lineHeight": 24, "usage": "Corpo de texto principal, perguntas do check-in" },
+        "bodyM": { "size": 15, "weight": "400", "lineHeight": 22, "usage": "Descrições, textos de apoio em cards" },
+        "bodyS": { "size": 14, "weight": "400", "lineHeight": 20, "usage": "Subtítulos, labels secundários" },
+        "caption": { "size": 12, "weight": "400", "lineHeight": 16, "usage": "Timestamps, disclaimers, labels de tab bar" },
+        "captionBold": { "size": 12, "weight": "600", "lineHeight": 16, "usage": "Labels de chips, badges, indicadores" },
+        "metricNumber": { "size": 28, "weight": "800", "lineHeight": 32, "usage": "Números em cards de métricas no grid" },
+        "metricLabel": { "size": 13, "weight": "500", "lineHeight": 16, "usage": "Label abaixo do número de métrica" }
+      }
+    },
+  
+    "spacing": {
+      "description": "Sistema de 4pt. Usa múltiplos de 4 para todos os espaçamentos.",
+      "base": 4,
+      "scale": {
+        "xs": 4,
+        "sm": 8,
+        "md": 12,
+        "lg": 16,
+        "xl": 20,
+        "2xl": 24,
+        "3xl": 32,
+        "4xl": 40,
+        "5xl": 48,
+        "6xl": 64
+      },
+      "screen": {
+        "horizontalPadding": 20,
+        "verticalPadding": 16,
+        "cardPadding": 20,
+        "cardPaddingCompact": 14,
+        "sectionGap": 16,
+        "itemGap": 12
+      }
+    },
+  
+    "borderRadius": {
+      "sm": 8,
+      "md": 12,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24,
+      "full": 999,
+      "card": 20,
+      "button": 14,
+      "chip": 24,
+      "input": 12,
+      "badge": 8,
+      "tabBar": 32
+    },
+  
+    "shadows": {
+      "description": "Sombras coloridas em verde-sage para criar profundidade com identidade de marca. Nunca sombra preta genérica.",
+      "none": "sem sombra",
+      "sm": {
+        "shadowColor": "#5C7A5C",
+        "shadowOffset": { "width": 0, "height": 2 },
+        "shadowOpacity": 0.06,
+        "shadowRadius": 8,
+        "elevation": 2
+      },
+      "md": {
+        "shadowColor": "#5C7A5C",
+        "shadowOffset": { "width": 0, "height": 4 },
+        "shadowOpacity": 0.08,
+        "shadowRadius": 12,
+        "elevation": 4
+      },
+      "lg": {
+        "shadowColor": "#5C7A5C",
+        "shadowOffset": { "width": 0, "height": 8 },
+        "shadowOpacity": 0.14,
+        "shadowRadius": 20,
+        "elevation": 8
+      },
+      "glowSage": {
+        "shadowColor": "#5C7A5C",
+        "shadowOffset": { "width": 0, "height": 0 },
+        "shadowOpacity": 0.35,
+        "shadowRadius": 16,
+        "elevation": 10
+      },
+      "glowTerracota": {
+        "shadowColor": "#C4846A",
+        "shadowOffset": { "width": 0, "height": 0 },
+        "shadowOpacity": 0.35,
+        "shadowRadius": 16,
+        "elevation": 10
+      }
+    },
+  
+    "components": {
+  
+      "tabBar": {
+        "description": "Tab bar arredondada e flutuante inspirada no estilo pill. Fundo escuro sage com ícones brancos. Item ativo tem label visível e indicador. Flutua acima do conteúdo com sombra forte.",
+        "style": "floating-pill",
+        "background": "#5C7A5C",
+        "borderRadius": 32,
+        "height": 64,
+        "marginHorizontal": 20,
+        "marginBottom": 24,
+        "paddingHorizontal": 8,
+        "shadow": {
+          "shadowColor": "#5C7A5C",
+          "shadowOffset": { "width": 0, "height": 8 },
+          "shadowOpacity": 0.35,
+          "shadowRadius": 24,
+          "elevation": 16
+        },
+        "item": {
+          "inactive": {
+            "iconColor": "rgba(255,255,255,0.5)",
+            "labelVisible": false
+          },
+          "active": {
+            "background": "rgba(255,255,255,0.18)",
+            "borderRadius": 24,
+            "iconColor": "#FFFFFF",
+            "labelColor": "#FFFFFF",
+            "labelSize": 11,
+            "labelWeight": "600",
+            "paddingHorizontal": 16,
+            "paddingVertical": 8
+          }
+        }
+      },
+  
+      "card": {
+        "default": {
+          "background": "#FFFFFF",
+          "borderRadius": 20,
+          "padding": 20,
+          "shadow": "md",
+          "border": "none"
+        },
+        "subtle": {
+          "background": "#F5F8F5",
+          "borderRadius": 20,
+          "padding": 20,
+          "shadow": "sm",
+          "border": "1px solid #E8EDE8"
+        },
+        "glassmorphism": {
+          "background": "rgba(255,255,255,0.75)",
+          "borderRadius": 20,
+          "padding": 20,
+          "border": "1px solid rgba(255,255,255,0.9)",
+          "shadow": "md",
+          "backdropBlur": "simulado com sombra sage suave"
+        },
+        "highlighted": {
+          "description": "Card de destaque com gradiente sage. Usado para streak, marcos, conquistas.",
+          "background": "gradientSage",
+          "borderRadius": 20,
+          "padding": 20,
+          "shadow": "glowSage",
+          "textColor": "#FFFFFF",
+          "decorativeCircle": {
+            "size": 120,
+            "background": "rgba(255,255,255,0.08)",
+            "position": "top-right",
+            "offset": { "top": -24, "right": -24 }
+          }
+        },
+        "accent": {
+          "description": "Card com borda esquerda colorida. Usado para próximos eventos, GLP-1.",
+          "background": "#FFFFFF",
+          "borderRadius": 16,
+          "padding": 16,
+          "borderLeft": "3px solid #C4846A",
+          "shadow": "sm"
+        },
+        "pastel": {
+          "description": "Cards coloridos em pastel para categorias ou métricas rápidas. Inspirado no app de nutrição.",
+          "borderRadius": 16,
+          "padding": 14,
+          "shadow": "sm",
+          "variants": {
+            "sage": { "background": "#EBF3EB", "textColor": "#5C7A5C" },
+            "terracota": { "background": "#FBF0EB", "textColor": "#C4846A" },
+            "neutral": { "background": "#F0F0F0", "textColor": "#6B6B6B" }
+          }
+        }
+      },
+  
+      "metricGrid": {
+        "description": "Grid 2x2 de cards de métricas com número grande e bold. Inspirado diretamente no segundo screenshot. Cada card ocupa 50% da largura menos gap.",
+        "columns": 2,
+        "gap": 12,
+        "card": {
+          "background": "#FFFFFF",
+          "borderRadius": 16,
+          "padding": 16,
+          "shadow": "sm",
+          "border": "1px solid #E8EDE8"
+        },
+        "number": {
+          "size": 28,
+          "weight": "800",
+          "color": "#5C7A5C"
+        },
+        "label": {
+          "size": 13,
+          "weight": "500",
+          "color": "#6B6B6B",
+          "marginTop": 4
+        },
+        "icon": {
+          "size": 20,
+          "color": "#8FAF8F",
+          "marginBottom": 8
+        }
+      },
+  
+      "progressBar": {
+        "description": "Barra de progresso fina e arredondada. Nunca com bordas quadradas.",
+        "height": 6,
+        "borderRadius": 999,
+        "background": "#E8EDE8",
+        "fill": "gradientSage",
+        "animated": true
+      },
+  
+      "progressRing": {
+        "description": "Anel circular de progresso inspirado no app de nutrição. Usado para metas, progresso de 90 dias.",
+        "strokeWidth": 8,
+        "size": 120,
+        "backgroundColor": "#E8EDE8",
+        "progressColor": "#5C7A5C",
+        "centerContent": "número grande + label"
+      },
+  
+      "weekDots": {
+        "description": "7 círculos representando os dias da semana. Padrão de check-in visual.",
+        "size": 36,
+        "gap": 8,
+        "states": {
+          "completed": {
+            "background": "gradientSage",
+            "shadow": "glowSage subtle",
+            "borderWidth": 0
+          },
+          "shield": {
+            "background": "gradientTerracota",
+            "borderWidth": 0
+          },
+          "empty": {
+            "background": "transparent",
+            "borderWidth": 1.5,
+            "borderColor": "#C8DEC8"
+          },
+          "today": {
+            "background": "transparent",
+            "borderWidth": 2,
+            "borderColor": "#5C7A5C"
+          }
+        },
+        "label": {
+          "size": 10,
+          "weight": "500",
+          "color": "#6B6B6B",
+          "marginTop": 4
+        }
+      },
+  
+      "buttons": {
+        "primary": {
+          "description": "Botão principal com gradiente sage e glow. CTA principal de cada tela.",
+          "background": "gradientSage",
+          "borderRadius": 14,
+          "height": 56,
+          "paddingHorizontal": 24,
+          "shadow": "glowSage",
+          "text": { "size": 17, "weight": "700", "color": "#FFFFFF" },
+          "pressScale": 0.96,
+          "disabled": { "opacity": 0.4, "shadow": "none" }
+        },
+        "primaryTerracota": {
+          "description": "Botão CTA de ação urgente ou emocional.",
+          "background": "gradientTerracota",
+          "borderRadius": 14,
+          "height": 56,
+          "shadow": "glowTerracota",
+          "text": { "size": 17, "weight": "700", "color": "#FFFFFF" },
+          "pressScale": 0.96
+        },
+        "secondary": {
+          "description": "Botão secundário com borda sage. Sem preenchimento.",
+          "background": "transparent",
+          "border": "1.5px solid #5C7A5C",
+          "borderRadius": 14,
+          "height": 48,
+          "text": { "size": 16, "weight": "600", "color": "#5C7A5C" },
+          "pressScale": 0.97
+        },
+        "ghost": {
+          "description": "Botão sem borda e sem fundo. Para ações secundárias e links.",
+          "background": "transparent",
+          "borderRadius": 14,
+          "height": 44,
+          "text": { "size": 15, "weight": "600", "color": "#5C7A5C" },
+          "pressScale": 0.97
+        },
+        "white": {
+          "description": "Botão branco sobre fundo colorido. Usado em cards com gradiente.",
+          "background": "#FFFFFF",
+          "borderRadius": 14,
+          "height": 52,
+          "shadow": { "shadowColor": "#FFFFFF", "shadowOpacity": 0.3, "shadowRadius": 12 },
+          "text": { "size": 16, "weight": "700", "color": "#5C7A5C" },
+          "pressScale": 0.96
+        }
+      },
+  
+      "chips": {
+        "description": "Chips de seleção para perguntas do check-in, sintomas GLP-1, contexto alimentar.",
+        "borderRadius": 24,
+        "paddingHorizontal": 16,
+        "paddingVertical": 10,
+        "states": {
+          "unselected": {
+            "background": "#F0F0F0",
+            "border": "1px solid #E8EDE8",
+            "text": { "size": 14, "weight": "500", "color": "#6B6B6B" }
+          },
+          "selectedSage": {
+            "background": "gradientSage",
+            "shadow": "glowSage subtle",
+            "text": { "size": 14, "weight": "600", "color": "#FFFFFF" }
+          },
+          "selectedTerracota": {
+            "background": "#FBF0EB",
+            "border": "1px solid #C4846A",
+            "text": { "size": 14, "weight": "600", "color": "#C4846A" }
+          }
+        },
+        "transition": "200ms color + scale"
+      },
+  
+      "inputs": {
+        "default": {
+          "background": "#FFFFFF",
+          "border": "1.5px solid #E8EDE8",
+          "borderRadius": 12,
+          "height": 52,
+          "paddingHorizontal": 16,
+          "text": { "size": 16, "color": "#1A1A1A" },
+          "placeholder": { "color": "#BDBDBD" },
+          "focusBorder": "1.5px solid #8FAF8F",
+          "icon": { "size": 18, "color": "#8FAF8F", "position": "left" }
+        },
+        "onDark": {
+          "description": "Input sobre fundo gradiente sage. Usado nas telas de login/cadastro.",
+          "background": "rgba(255,255,255,0.2)",
+          "border": "1px solid rgba(255,255,255,0.3)",
+          "borderRadius": 12,
+          "height": 52,
+          "paddingHorizontal": 16,
+          "text": { "size": 16, "color": "#FFFFFF" },
+          "placeholder": { "color": "rgba(255,255,255,0.6)" }
+        }
+      },
+  
+      "header": {
+        "description": "Header de tela com gradiente sutil. Nunca fundo sólido branco — sempre gradiente leve.",
+        "background": "gradientHeader",
+        "paddingTop": "safeAreaTop + 8",
+        "paddingBottom": 12,
+        "paddingHorizontal": 20,
+        "title": { "size": 24, "weight": "700", "color": "#1A1A1A" },
+        "subtitle": { "size": 14, "weight": "400", "color": "#6B6B6B", "marginTop": 2 }
+      },
+  
+      "feedItem": {
+        "description": "Item de feed para comunidade e histórico. Inspirado no estilo de lista do segundo screenshot.",
+        "background": "#FFFFFF",
+        "borderRadius": 16,
+        "padding": 16,
+        "borderLeft": "3px solid #8FAF8F",
+        "shadow": "sm",
+        "marginBottom": 8,
+        "icon": { "size": 24, "marginRight": 12 },
+        "title": { "size": 15, "weight": "600", "color": "#1A1A1A" },
+        "timestamp": { "size": 12, "weight": "400", "color": "#6B6B6B" },
+        "animation": "fadeSlideIn com delay escalonado de 60ms"
+      },
+  
+      "timeline": {
+        "description": "Lista em linha do tempo vertical. Usado no histórico de aplicações GLP-1.",
+        "dot": {
+          "size": 12,
+          "background": "#5C7A5C",
+          "borderWidth": 2,
+          "borderColor": "#FFFFFF",
+          "shadow": "sm"
+        },
+        "line": {
+          "width": 2,
+          "background": "#C8DEC8",
+          "marginLeft": 5
+        },
+        "item": {
+          "paddingLeft": 20,
+          "paddingBottom": 20
+        }
+      },
+  
+      "modal": {
+        "overlay": { "background": "rgba(0,0,0,0.5)", "backdropBlur": "optional" },
+        "sheet": {
+          "background": "#FFFFFF",
+          "borderRadius": "24px top only",
+          "padding": 24,
+          "handleBar": {
+            "width": 36,
+            "height": 4,
+            "background": "#E8EDE8",
+            "borderRadius": 2,
+            "marginBottom": 20,
+            "alignSelf": "center"
+          }
+        },
+        "fullscreen": {
+          "background": "#FAFAF8",
+          "borderRadius": 0,
+          "padding": 0
+        }
+      },
+  
+      "badge": {
+        "default": {
+          "background": "#EBF3EB",
+          "borderRadius": 8,
+          "paddingHorizontal": 8,
+          "paddingVertical": 4,
+          "text": { "size": 12, "weight": "600", "color": "#5C7A5C" }
+        },
+        "terracota": {
+          "background": "#FBF0EB",
+          "text": { "color": "#C4846A" }
+        }
+      },
+  
+      "disclaimer": {
+        "background": "#FFF8F0",
+        "border": "1px solid #F0D4C8",
+        "borderRadius": 10,
+        "padding": 12,
+        "text": { "size": 12, "color": "#C4846A", "lineHeight": 18 },
+        "icon": { "size": 14, "color": "#C4846A", "marginRight": 6 }
+      },
+  
+      "completionOverlay": {
+        "description": "Overlay de conclusão animado após check-in ou registro de peso.",
+        "background": "rgba(255,255,255,0.97)",
+        "position": "absolute, tela inteira",
+        "icon": {
+          "size": 64,
+          "color": "#5C7A5C",
+          "animation": "scale 0 → 1.2 → 1.0 com spring damping:12 stiffness:180"
+        },
+        "title": { "size": 24, "weight": "700", "color": "#1A1A1A", "marginTop": 16 },
+        "subtitle": { "size": 15, "color": "#6B6B6B", "marginTop": 8 },
+        "duration": "2000ms depois navega"
+      }
+    },
+  
+    "layout": {
+  
+      "screenStructure": {
+        "description": "Estrutura padrão de todas as telas do app.",
+        "order": [
+          "SafeAreaView (flex: 1, background: #FAFAF8)",
+          "Header com gradiente",
+          "ScrollView com contentContainerStyle paddingBottom: 32",
+          "Cards em sequência com gap de 16px",
+          "Padding horizontal: 20px em todos os cards"
+        ]
+      },
+  
+      "homeLayout": {
+        "description": "Layout da home inspirado nos dois screenshots: saudação bold no topo, card hero de destaque, depois seções em ordem de prioridade.",
+        "sections": [
+          "Header: saudação displayM + subtítulo em bodyS",
+          "Card hero: streak/sequência com gradiente e número displayXL",
+          "Card CTA: check-in do dia com botão primaryTerracota",
+          "Row horizontal: 2-3 cards pastel com métricas rápidas (largura 48% cada)",
+          "Card de progresso semanal: weekDots + barra de progresso",
+          "Card de ritmo: metricGrid 2x2",
+          "Card de eventos: lista com accent border",
+          "Card de conteúdo: título + botão ghost"
+        ]
+      },
+  
+      "cardRow": {
+        "description": "2 cards lado a lado ocupando largura total. Padrão do segundo screenshot para métricas.",
+        "flexDirection": "row",
+        "gap": 12,
+        "cardWidth": "calc(50% - 6px)",
+        "minHeight": 100
+      },
+  
+      "listLayout": {
+        "description": "Lista vertical de itens com gap consistente.",
+        "gap": 8,
+        "firstItemMarginTop": 0
+      }
+    },
+  
+    "animations": {
+      "description": "Todas as animações usam react-native-reanimated. Filosofia: movimentos suaves e naturais, nunca mecânicos.",
+      "entrance": {
+        "fadeSlideIn": {
+          "from": { "opacity": 0, "translateY": 24 },
+          "to": { "opacity": 1, "translateY": 0 },
+          "duration": 400,
+          "easing": "ease-out",
+          "usage": "Todos os cards ao entrar na tela, com delay escalonado de 80ms"
+        },
+        "scaleIn": {
+          "from": { "scale": 0, "opacity": 0 },
+          "to": { "scale": 1, "opacity": 1 },
+          "type": "spring",
+          "damping": 12,
+          "stiffness": 180,
+          "usage": "Ícones de conclusão, modais"
+        },
+        "fadeIn": {
+          "from": { "opacity": 0 },
+          "to": { "opacity": 1 },
+          "duration": 400,
+          "usage": "Overlays, textos secundários"
+        }
+      },
+      "interaction": {
+        "pressScale": {
+          "onPressIn": { "scale": 0.96 },
+          "onPressOut": { "scale": 1.0 },
+          "type": "spring",
+          "damping": 15,
+          "stiffness": 300,
+          "usage": "Todos os botões e cards clicáveis"
+        },
+        "chipSelect": {
+          "duration": 200,
+          "properties": ["backgroundColor", "borderColor", "scale"],
+          "usage": "Chips de seleção no check-in"
+        }
+      },
+      "staggerDelay": {
+        "description": "Delay escalonado entre cards para efeito cascata.",
+        "base": 0,
+        "increment": 80,
+        "max": 400
+      }
+    },
+  
+    "patterns": {
+      "noDataState": {
+        "description": "Estado vazio de qualquer lista ou card sem dados.",
+        "icon": "leaf-outline em #C8DEC8, tamanho 32px",
+        "text": { "size": 15, "color": "#6B6B6B", "textAlign": "center" },
+        "padding": 32,
+        "template": "Faça seu primeiro [ação] para ver [conteúdo] aqui 🌱"
+      },
+      "sectionTitle": {
+        "text": { "size": 17, "weight": "700", "color": "#1A1A1A" },
+        "marginBottom": 12,
+        "marginTop": 4
+      },
+      "inlineError": {
+        "text": { "size": 13, "color": "rgba(180,60,60,0.9)", "marginTop": 6 },
+        "icon": "alert-circle-outline tamanho 14px"
+      },
+      "contextualInsight": {
+        "description": "Texto de insight contextual que aparece abaixo de métricas. Tom de coach, nunca julgamento.",
+        "background": "#EBF3EB",
+        "borderRadius": 10,
+        "padding": 12,
+        "text": { "size": 14, "color": "#5C7A5C", "lineHeight": 20 },
+        "icon": "bulb-outline ou leaf-outline"
+      }
+    },
+  
+    "instructions": {
+      "howToUse": [
+        "Cole este JSON no início de qualquer prompt para o Cursor como contexto de design",
+        "Referencie componentes pelo nome: 'usa o padrão card.highlighted com metricGrid 2x2'",
+        "Para novos componentes, diga: 'cria seguindo o design system do UpWell no JSON'",
+        "Para consistência de cor, sempre referencie as chaves: 'usa colors.sage.dark como cor primária'",
+        "Para animações, sempre especifique: 'aplica animations.entrance.fadeSlideIn com staggerDelay'"
+      ],
+      "cursorPromptTemplate": "Usando o design system UpWell definido no JSON abaixo, cria [componente/tela]. Segue rigorosamente os tokens de cor, tipografia, espaçamento e animação definidos. Não inventa novos estilos — usa apenas o que está no design system. [COLAR JSON AQUI]"
+    }
+  }
+  

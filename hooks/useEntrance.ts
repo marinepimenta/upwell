@@ -58,3 +58,29 @@ export function usePressScale() {
 
   return { onPressIn, onPressOut, animatedStyle };
 }
+
+const SCALE_IN_DAMPING = 12;
+const SCALE_IN_STIFFNESS = 180;
+
+/**
+ * Scale + fade in (spring). Use para ícones de conclusão, modais, logo.
+ * Design system: animations.entrance.scaleIn
+ * @param delay ms antes de iniciar (default 0)
+ */
+export function useScaleIn(delay: number = 0) {
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      opacity.value = withSpring(1, { damping: SCALE_IN_DAMPING, stiffness: SCALE_IN_STIFFNESS });
+      scale.value = withSpring(1, { damping: SCALE_IN_DAMPING, stiffness: SCALE_IN_STIFFNESS });
+    }, delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+
+  return useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+}

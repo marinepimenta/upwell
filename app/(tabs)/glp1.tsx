@@ -11,10 +11,16 @@ import {
   Share,
   ActivityIndicator,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  interpolateColor,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Text as ThemedText } from '@/components/Themed';
 import { colors, gradients, shadows, radius, spacing, typography } from '@/constants/theme';
 import { useFadeSlideIn, usePressScale } from '@/hooks/useEntrance';
@@ -32,14 +38,15 @@ import {
 const MEDICATIONS = ['Ozempic', 'Mounjaro', 'Wegovy', 'Outro'];
 const DOSES = ['0.25mg', '0.5mg', '1mg', '2mg', 'Outro'];
 const SYMPTOMS = [
-  'Náusea',
+  'Náusea 🤢',
   'Falta de apetite',
-  'Cansaço',
+  'Cansaço 😴',
   'Constipação',
   'Refluxo',
   'Tontura',
-  'Bem! Sem sintomas',
+  'Bem! Sem sintomas ✨',
 ];
+const BEM_SEM_SINTOMAS = 'Bem! Sem sintomas ✨';
 
 const EDUCATIVO_ITEMS = [
   {
@@ -64,6 +71,85 @@ const EDUCATIVO_ITEMS = [
 
 const DISCLAIMER =
   'Este conteúdo é informativo e não substitui orientação médica. Sempre consulte sua médica antes de tomar decisões sobre seu tratamento.';
+const DISCLAIMER_SHORT = 'Este conteúdo não substitui orientação médica.';
+
+// Shadow md do design system
+const shadowMd = {
+  shadowColor: '#5C7A5C',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.08,
+  shadowRadius: 12,
+  elevation: 4,
+};
+
+function SymptomChip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const press = usePressScale();
+  const selectedVal = useSharedValue(selected ? 1 : 0);
+
+  useEffect(() => {
+    selectedVal.value = withTiming(selected ? 1 : 0, { duration: 200 });
+  }, [selected, selectedVal]);
+
+  const animatedBg = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(selectedVal.value, [0, 1], ['#EBF3EB', '#C8DEC8']),
+    borderWidth: selectedVal.value > 0.5 ? 1 : 0,
+    borderColor: '#8FAF8F',
+  }));
+
+  return (
+    <Animated.View style={press.animatedStyle}>
+      <TouchableOpacity
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        onPress={onPress}
+        activeOpacity={1}
+        style={styles.sintomaChipTouch}
+      >
+        <Animated.View style={[styles.sintomaChipInner, animatedBg]}>
+          <RNText style={[styles.sintomaChipText, selected && styles.sintomaChipTextSelected]}>
+            {label}
+          </RNText>
+        </Animated.View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+function EducativoRow({
+  item,
+  onPress,
+  isLast,
+}: {
+  item: (typeof EDUCATIVO_ITEMS)[0];
+  onPress: () => void;
+  isLast: boolean;
+}) {
+  const press = usePressScale();
+  return (
+    <Animated.View style={press.animatedStyle}>
+      <TouchableOpacity
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        onPress={onPress}
+        activeOpacity={1}
+        style={[styles.educativoRow, !isLast && styles.educativoRowBorder]}
+      >
+        <RNText style={styles.educativoRowText} numberOfLines={2}>
+          {item.title}
+        </RNText>
+        <Ionicons name="chevron-forward" size={18} color="#8FAF8F" />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 function formatDatePtBr(dateStr: string): string {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('pt-BR', {
@@ -71,6 +157,16 @@ function formatDatePtBr(dateStr: string): string {
     month: 'long',
     year: 'numeric',
   });
+}
+
+function formatNextApplicationDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  const weekday = d.toLocaleDateString('pt-BR', { weekday: 'long' });
+  const day = d.getDate().toString().padStart(2, '0');
+  const month = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+  const year = d.getFullYear();
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  return `${cap(weekday)}, ${day} ${cap(month)} ${year}`;
 }
 
 export default function Glp1CompanionScreen() {
@@ -142,12 +238,12 @@ export default function Glp1CompanionScreen() {
   };
 
   const toggleSymptom = (s: string) => {
-    if (s === 'Bem! Sem sintomas') {
-      setSelectedSymptoms(['Bem! Sem sintomas']);
+    if (s === BEM_SEM_SINTOMAS) {
+      setSelectedSymptoms([BEM_SEM_SINTOMAS]);
       return;
     }
     setSelectedSymptoms((prev) => {
-      const withoutBem = prev.filter((x) => x !== 'Bem! Sem sintomas');
+      const withoutBem = prev.filter((x) => x !== BEM_SEM_SINTOMAS);
       if (withoutBem.includes(s)) return withoutBem.filter((x) => x !== s);
       return [...withoutBem, s];
     });
@@ -238,11 +334,24 @@ export default function Glp1CompanionScreen() {
         </View>
 
         {/* Bloco 1 — Próxima aplicação */}
-        <Animated.View style={[styles.card, styles.cardAplicacao, entrance0]}>
+        <Animated.View style={[styles.cardProximaAplicacao, entrance0]}>
           <ThemedText style={styles.cardTitle}>Próxima aplicação</ThemedText>
-          <RNText style={styles.nextDateText}>
-            {nextDate ? formatDatePtBr(nextDate) : 'Registre sua primeira aplicação abaixo'}
-          </RNText>
+          {nextDate ? (
+            <>
+              <RNText style={styles.nextDateText}>
+                {formatNextApplicationDate(nextDate)}
+              </RNText>
+              {applications.length > 0 && (
+                <RNText style={styles.nextMedicationText}>
+                  {applications[0].medication} {applications[0].dose}
+                </RNText>
+              )}
+            </>
+          ) : (
+            <RNText style={styles.nextDatePlaceholder}>
+              Registre sua primeira aplicação abaixo
+            </RNText>
+          )}
           <Animated.View style={pressRegistrar.animatedStyle}>
             <TouchableOpacity
               onPressIn={pressRegistrar.onPressIn}
@@ -251,9 +360,12 @@ export default function Glp1CompanionScreen() {
               activeOpacity={1}
             >
               <LinearGradient
-                colors={gradients.gradientTerracotta}
-                style={[styles.btnRegistrar, shadows.glowTerracotta]}
+                colors={['#A07D70', '#C8AE9F']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.btnRegistrar}
               >
+                <Ionicons name="medical-outline" size={20} color={colors.white} style={styles.btnRegistrarIcon} />
                 <RNText style={styles.btnRegistrarText}>Registrar aplicação de hoje</RNText>
               </LinearGradient>
             </TouchableOpacity>
@@ -261,26 +373,22 @@ export default function Glp1CompanionScreen() {
         </Animated.View>
 
         {/* Bloco 2 — Sintomas */}
-        <Animated.View style={[styles.card, entrance1]}>
-          <ThemedText style={styles.cardTitle}>Como você está se sentindo?</ThemedText>
-          <RNText style={styles.cardSubtitle}>
+        <Animated.View style={[styles.cardSintomas, entrance1]}>
+          <ThemedText style={styles.sintomasTitle}>Como você está se sentindo?</ThemedText>
+          <RNText style={styles.sintomasSubtitle}>
             Registrar sintomas ajuda sua médica a ajustar o tratamento.
           </RNText>
-          <View style={styles.chipsRow}>
+          <View style={styles.sintomasChipsRow}>
             {SYMPTOMS.map((s) => (
-              <TouchableOpacity
+              <SymptomChip
                 key={s}
-                style={[styles.chip, selectedSymptoms.includes(s) && styles.chipSelected]}
+                label={s}
+                selected={selectedSymptoms.includes(s)}
                 onPress={() => toggleSymptom(s)}
-                activeOpacity={0.8}
-              >
-                <RNText style={[styles.chipText, selectedSymptoms.includes(s) && styles.chipTextSelected]}>
-                  {s}
-                </RNText>
-              </TouchableOpacity>
+              />
             ))}
           </View>
-          <Animated.View style={pressSalvarSintomas.animatedStyle}>
+          <Animated.View style={[pressSalvarSintomas.animatedStyle, styles.btnSalvarSintomasWrap]}>
             <TouchableOpacity
               onPressIn={pressSalvarSintomas.onPressIn}
               onPressOut={pressSalvarSintomas.onPressOut}
@@ -340,28 +448,26 @@ export default function Glp1CompanionScreen() {
           )}
         </Animated.View>
 
-        {/* Bloco 5 — Conteúdo educativo */}
-        <Animated.View style={[styles.cardEducativo, entrance4]}>
-          <ThemedText style={styles.cardTitle}>Saiba mais</ThemedText>
-          {EDUCATIVO_ITEMS.map((item) => (
-            <TouchableOpacity
+        {/* Bloco 5 — Saiba mais */}
+        <Animated.View style={[styles.cardSaibaMais, entrance4]}>
+          <RNText style={styles.saibaMaisTitle}>Saiba mais</RNText>
+          {EDUCATIVO_ITEMS.map((item, index) => (
+            <EducativoRow
               key={item.id}
-              style={styles.educativoItem}
+              item={item}
               onPress={() => {
                 setEducativoSelected(item);
                 setModalEducativoVisible(true);
               }}
-              activeOpacity={0.8}
-            >
-              <RNText style={styles.educativoItemText}>{item.title}</RNText>
-            </TouchableOpacity>
+              isLast={index === EDUCATIVO_ITEMS.length - 1}
+            />
           ))}
         </Animated.View>
 
-        {/* Bloco 6 — Relatório */}
-        <Animated.View style={[styles.cardRelatorio, entrance5]}>
-          <ThemedText style={styles.cardTitle}>Leve para sua consulta</ThemedText>
-          <RNText style={styles.relatorioDesc}>
+        {/* Bloco 6 — Leve para sua consulta */}
+        <Animated.View style={[styles.cardLeveConsulta, entrance5]}>
+          <RNText style={styles.leveConsultaTitle}>Leve para sua consulta</RNText>
+          <RNText style={styles.leveConsultaDesc}>
             Resumo das suas aplicações e sintomas do último mês, pronto para mostrar para sua médica.
           </RNText>
           <Animated.View style={pressGerarRelatorio.animatedStyle}>
@@ -372,6 +478,7 @@ export default function Glp1CompanionScreen() {
               style={styles.btnGerarRelatorio}
               activeOpacity={1}
             >
+              <Ionicons name="document-text-outline" size={18} color="#5C7A5C" style={styles.btnGerarRelatorioIcon} />
               <RNText style={styles.btnGerarRelatorioText}>Gerar relatório</RNText>
             </TouchableOpacity>
           </Animated.View>
@@ -438,7 +545,7 @@ export default function Glp1CompanionScreen() {
               <>
                 <ThemedText style={styles.modalTitle}>{educativoSelected.title}</ThemedText>
                 <RNText style={styles.modalParagraph}>{educativoSelected.content}</RNText>
-                <RNText style={styles.disclaimerModal}>{DISCLAIMER}</RNText>
+                <RNText style={styles.disclaimerModal}>{DISCLAIMER_SHORT}</RNText>
                 <TouchableOpacity
                   style={styles.modalBtn}
                   onPress={() => setModalEducativoVisible(false)}
@@ -457,7 +564,9 @@ export default function Glp1CompanionScreen() {
         <Pressable style={styles.modalOverlay} onPress={() => setModalRelatorioVisible(false)}>
           <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
             <ThemedText style={styles.modalTitle}>Resumo para sua médica</ThemedText>
-            <RNText style={styles.relatorioModalText}>{relatorioText}</RNText>
+            <ScrollView style={styles.relatorioModalScroll} showsVerticalScrollIndicator={false}>
+              <RNText style={styles.relatorioModalText}>{relatorioText}</RNText>
+            </ScrollView>
             <TouchableOpacity style={styles.btnCompartilhar} onPress={handleCompartilhar} activeOpacity={0.8}>
               <RNText style={styles.btnCompartilharText}>Compartilhar</RNText>
             </TouchableOpacity>
@@ -522,6 +631,13 @@ const styles = StyleSheet.create({
     borderColor: colors.glassBorder,
     ...shadows.card,
   },
+  cardProximaAplicacao: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    ...shadows.card,
+  },
   cardAplicacao: {
     borderLeftWidth: 3,
     borderLeftColor: colors.terracotta,
@@ -535,16 +651,92 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.md,
   },
-  nextDateText: {
-    fontSize: 24,
+  cardSintomas: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: spacing.lg,
+    ...shadowMd,
+  },
+  sintomasTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: colors.text,
-    marginBottom: spacing.md,
+    color: '#1A1A1A',
+  },
+  sintomasSubtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#6B6B6B',
+    marginTop: 4,
+  },
+  sintomasChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 20,
+  },
+  sintomaChipTouch: {
+    alignSelf: 'flex-start',
+  },
+  sintomaChipInner: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  sintomaChipText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1A1A1A',
+  },
+  sintomaChipTextSelected: {
+    fontWeight: '600',
+    color: '#5C7A5C',
+  },
+  btnSalvarSintomasWrap: {
+    marginTop: 16,
+  },
+  btnSalvarSintomas: {
+    width: '100%',
+    height: 52,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#5C7A5C',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnSalvarSintomasText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#5C7A5C',
+  },
+  nextDateText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.sageDark,
+    marginBottom: 4,
+  },
+  nextMedicationText: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
+  nextDatePlaceholder: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
   },
   btnRegistrar: {
-    padding: spacing.md,
-    borderRadius: radius.button,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 16,
+  },
+  btnRegistrarIcon: {
+    marginRight: 8,
   },
   btnRegistrarText: {
     fontSize: 16,
@@ -574,17 +766,6 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   chipTextSelected: {
-    color: colors.white,
-    fontWeight: '600',
-  },
-  btnSalvarSintomas: {
-    backgroundColor: colors.sage,
-    padding: spacing.md,
-    borderRadius: radius.button,
-    alignItems: 'center',
-  },
-  btnSalvarSintomasText: {
-    ...typography.label,
     color: colors.white,
     fontWeight: '600',
   },
@@ -651,48 +832,75 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.sageDark,
   },
-  cardEducativo: {
-    backgroundColor: colors.sageLight,
-    opacity: 0.95,
-    borderRadius: radius.card,
-    padding: spacing.lg,
+  cardSaibaMais: {
+    backgroundColor: '#EBF3EB',
+    borderRadius: 20,
+    padding: 20,
     marginBottom: spacing.lg,
-    ...shadows.card,
   },
-  educativoItem: {
-    paddingVertical: spacing.sm,
+  saibaMaisTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#5C7A5C',
+    marginBottom: 16,
+  },
+  educativoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+  },
+  educativoRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderSage,
+    borderBottomColor: '#C8DEC8',
   },
-  educativoItemText: {
-    ...typography.body,
-    color: colors.text,
+  educativoRowText: {
+    flex: 1,
+    marginRight: 12,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1A1A1A',
   },
-  cardRelatorio: {
-    backgroundColor: colors.white,
-    borderRadius: radius.card,
-    padding: spacing.lg,
+  cardLeveConsulta: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
     marginBottom: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.borderLight,
-    ...shadows.card,
+    borderColor: '#E8EDE8',
+    ...shadowMd,
   },
-  relatorioDesc: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
+  leveConsultaTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 8,
+  },
+  leveConsultaDesc: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#6B6B6B',
+    lineHeight: 22,
+    marginBottom: 16,
   },
   btnGerarRelatorio: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.button,
-    borderWidth: 1,
-    borderColor: colors.sage,
-    alignSelf: 'flex-start',
+    width: '100%',
+    height: 52,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#5C7A5C',
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnGerarRelatorioIcon: {
+    marginRight: 8,
   },
   btnGerarRelatorioText: {
-    ...typography.label,
-    color: colors.sageDark,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#5C7A5C',
   },
   modalOverlay: {
     flex: 1,
@@ -766,6 +974,10 @@ const styles = StyleSheet.create({
   modalBtnText: {
     ...typography.label,
     color: colors.white,
+  },
+  relatorioModalScroll: {
+    maxHeight: 280,
+    marginBottom: spacing.md,
   },
   relatorioModalText: {
     ...typography.bodySmall,

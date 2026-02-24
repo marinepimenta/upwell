@@ -104,7 +104,7 @@ export default function TabLayout() {
         options={{
           title: 'Progresso',
           tabBarIcon: ({ color, focused }) => <TabBarIcon name="bar-chart" color={color} focused={focused} />,
-          headerTitle: 'Seu progresso',
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -113,7 +113,7 @@ export default function TabLayout() {
           title: 'GLP-1',
           href: showGlp1Tab ? undefined : null,
           tabBarIcon: ({ color, focused }) => <TabBarIcon name="medical" color={color} focused={focused} />,
-          headerTitle: 'GLP-1 Companion',
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -121,7 +121,7 @@ export default function TabLayout() {
         options={{
           title: 'Comunidade',
           tabBarIcon: ({ color, focused }) => <TabBarIcon name="people" color={color} focused={focused} />,
-          headerTitle: 'Comunidade',
+          headerShown: false,
         }}
       />
       <Tabs.Screen
