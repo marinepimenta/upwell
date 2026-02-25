@@ -1,22 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   ScrollView,
   View,
+  Text as RNText,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Modal,
-  useWindowDimensions,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Text } from '@/components/Themed';
-import { colors, gradients, spacing, borderRadius, typography } from '@/constants/theme';
-import { getOnboardingData, OnboardingData } from '@/utils/storage';
+import Animated from 'react-native-reanimated';
+import { colors, gradients } from '@/constants/theme';
+import {
+  getProfile,
+  getMonthlyMetrics,
+  calculateStreak,
+  type Profile,
+} from '@/lib/database';
+import { usePressScale } from '@/hooks/useEntrance';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -27,48 +34,120 @@ function getGreeting(): string {
 
 function formatDate(isoDate: string): string {
   try {
-    const d = new Date(isoDate);
+    const d = new Date(isoDate + 'T12:00:00');
     return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
   } catch {
     return isoDate;
   }
 }
 
+function glp1Label(status: Profile['glp1_status']): string {
+  if (status === 'using') return 'Uso atualmente';
+  if (status === 'used') return 'Já usei';
+  if (status === 'never') return 'Não uso';
+  return 'Não informado';
+}
+
+function calcularDiasAtivos(programStartDate: string | null): number {
+  if (!programStartDate) return 0;
+  const inicio = new Date(programStartDate + 'T12:00:00');
+  const hoje = new Date();
+  inicio.setHours(0, 0, 0, 0);
+  hoje.setHours(0, 0, 0, 0);
+  const diffMs = hoje.getTime() - inicio.getTime();
+  const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  return Math.max(0, diffDias + 1);
+}
+
+type Metrics = {
+  checkins: number;
+  weightings: number;
+  streak: number;
+  trainings: number;
+};
+
 export default function PerfilScreen() {
-  const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [configModalVisible, setConfigModalVisible] = useState(false);
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const pressSettings = usePressScale();
+  const pressEdit = usePressScale();
+  const pressLogout = usePressScale();
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [metrics, setMetrics] = useState<Metrics>({ checkins: 0, weightings: 0, streak: 0, trainings: 0 });
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
 
-  const loadData = async () => {
-    const data = await getOnboardingData();
-    setOnboardingData(data);
+  const loadProfile = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const p = await getProfile();
+    // Fallback: nome do user_metadata se perfil ainda não tiver nome
+    if (p && !p.name && user?.user_metadata?.name) {
+      p.name = user.user_metadata.name;
+    }
+    setProfile(p ?? null);
+    if (user?.email) setEmail(user.email);
+  };
+
+  const loadProfileStats = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const [
+      { count: totalCheckins },
+      { count: totalPesagens },
+      streak,
+      mMetrics,
+    ] = await Promise.all([
+      supabase
+        .from('checkins')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id),
+      supabase
+        .from('weight_records')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id),
+      calculateStreak(),
+      getMonthlyMetrics(),
+    ]);
+
+    setMetrics({
+      checkins: totalCheckins ?? 0,
+      weightings: totalPesagens ?? 0,
+      streak: streak ?? 0,
+      trainings: mMetrics?.treinos ?? 0,
+    });
+  };
+
+  const loadAll = async () => {
+    setLoading(true);
+    await Promise.all([loadProfile(), loadProfileStats()]);
     setLoading(false);
   };
 
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadAll();
+    }, [])
+  );
+
   const handleLogout = () => {
-    setConfigModalVisible(false);
+    setModalVisible(false);
     Alert.alert(
-      'Resetar app',
-      'Isso vai limpar todos os dados e voltar para o onboarding. Deseja continuar?',
+      'Sair',
+      'Isso vai encerrar sua sessão. Deseja continuar?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Sair',
           style: 'destructive',
           onPress: async () => {
-            try {
-              await AsyncStorage.clear();
-              router.replace('/login');
-            } catch (error) {
-              console.error('Error clearing storage:', error);
-              Alert.alert('Erro', 'Não foi possível resetar o app. Tente novamente.');
-            }
+            await supabase.auth.signOut();
+            router.replace('/login');
           },
         },
       ]
@@ -78,133 +157,149 @@ export default function PerfilScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.loadingContainer}>
+        <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.sageDark} />
         </View>
       </SafeAreaView>
     );
   }
 
-  const greeting = getGreeting();
-  const displayName = onboardingData?.name?.trim() || '';
+  if (!profile) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.center}>
+          <RNText style={styles.errorText}>Não foi possível carregar seu perfil.</RNText>
+          <TouchableOpacity style={styles.retryBtn} onPress={loadAll} activeOpacity={0.8}>
+            <RNText style={styles.retryBtnText}>Tentar novamente</RNText>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const displayName = profile.name?.trim() || '—';
+  const initial = displayName !== '—' ? displayName[0].toUpperCase() : '?';
+  const dias = calcularDiasAtivos(profile.program_start_date ?? null);
+
+  const historyItems = [
+    { icon: 'checkbox-outline' as const, value: metrics.checkins, label: 'check-ins' },
+    { icon: 'scale-outline' as const, value: metrics.weightings, label: 'pesagens' },
+    { icon: 'flame-outline' as const, value: metrics.streak, label: 'dias sequência' },
+    { icon: 'barbell-outline' as const, value: metrics.trainings, label: 'treinos' },
+  ];
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {/* Header */}
       <LinearGradient colors={gradients.gradientHeader} style={styles.header}>
-        <Text style={styles.headerTitle}>
-          {greeting}, {displayName}
-        </Text>
-        <TouchableOpacity
-          onPress={() => setConfigModalVisible(true)}
-          style={styles.settingsButton}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Ionicons name="settings-outline" size={24} color={colors.text} />
-        </TouchableOpacity>
+        <RNText style={styles.headerTitle}>
+          {getGreeting()}, {displayName} 🌿
+        </RNText>
+        <Animated.View style={pressSettings.animatedStyle}>
+          <TouchableOpacity
+            onPressIn={pressSettings.onPressIn}
+            onPressOut={pressSettings.onPressOut}
+            onPress={() => setModalVisible(true)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={styles.settingsBtn}>
+            <Ionicons name="settings-outline" size={24} color="#6B6B6B" />
+          </TouchableOpacity>
+        </Animated.View>
       </LinearGradient>
 
       <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Seus dados</Text>
 
-          {(onboardingData?.initialWeight != null && onboardingData.initialWeight > 0) ||
-          (onboardingData?.currentWeight != null && onboardingData.currentWeight > 0) ? (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Peso inicial:</Text>
-              <Text style={styles.infoValue}>
-                {(onboardingData?.initialWeight ?? onboardingData?.currentWeight ?? 0).toFixed(1)} kg
-              </Text>
-            </View>
-          ) : null}
-
-          {onboardingData?.onboardingDate ? (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Data de início:</Text>
-              <Text style={styles.infoValue}>{formatDate(onboardingData.onboardingDate)}</Text>
-            </View>
-          ) : null}
-
-          {onboardingData?.glp1Status ? (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>GLP-1:</Text>
-              <Text style={styles.infoValue}>
-                {onboardingData.glp1Status === 'using' && 'Uso atualmente'}
-                {onboardingData.glp1Status === 'used' && 'Já usei'}
-                {onboardingData.glp1Status === 'never' && 'Nunca usei'}
-              </Text>
-            </View>
-          ) : null}
+        {/* Card perfil */}
+        <View style={styles.profileCard}>
+          <LinearGradient colors={gradients.gradientSage} style={styles.avatar}>
+            <RNText style={styles.avatarInitial}>{initial}</RNText>
+          </LinearGradient>
+          <RNText style={styles.profileName}>{displayName}</RNText>
+          <RNText style={styles.profileEmail}>{email || '—'}</RNText>
+          <Animated.View style={pressEdit.animatedStyle}>
+            <TouchableOpacity
+              onPressIn={pressEdit.onPressIn}
+              onPressOut={pressEdit.onPressOut}
+              onPress={() => router.push('/edit-profile')}
+              style={styles.editBtn}
+              activeOpacity={0.8}>
+              <RNText style={styles.editBtnText}>Editar perfil</RNText>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.warningText}>
-            Esta é uma tela temporária para desenvolvimento. Use o botão abaixo para resetar o app e
-            testar o onboarding novamente.
-          </Text>
-        </View>
+        {/* Card Seu programa */}
+        <View style={styles.programCard}>
+          <RNText style={styles.programTitle}>Seu programa</RNText>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.8}>
-          <Text style={styles.logoutButtonText}>Sair (resetar app)</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <View style={styles.programRow}>
+            <RNText style={styles.programLabel}>Início</RNText>
+            <RNText style={styles.programValue}>
+              {profile.program_start_date ? formatDate(profile.program_start_date) : '—'}
+            </RNText>
+          </View>
+          <View style={styles.programDivider} />
 
-      <Modal
-        visible={configModalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setConfigModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { width: Math.min(width - spacing.lg * 2, 400) }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Configurações</Text>
-              <TouchableOpacity
-                onPress={() => setConfigModalVisible(false)}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              style={styles.modalScroll}
-              contentContainerStyle={styles.modalScrollContent}
-              showsVerticalScrollIndicator={false}>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Seus dados</Text>
-                {onboardingData?.name ? (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Nome:</Text>
-                    <Text style={styles.infoValue}>{onboardingData.name}</Text>
-                  </View>
-                ) : null}
-                {onboardingData?.currentWeight != null && onboardingData.currentWeight > 0 ? (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Peso atual:</Text>
-                    <Text style={styles.infoValue}>
-                      {onboardingData.currentWeight.toFixed(1)} kg
-                    </Text>
-                  </View>
-                ) : null}
-                {onboardingData?.glp1Status ? (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>GLP-1:</Text>
-                    <Text style={styles.infoValue}>
-                      {onboardingData.glp1Status === 'using' && 'Uso atualmente'}
-                      {onboardingData.glp1Status === 'used' && 'Já usei'}
-                      {onboardingData.glp1Status === 'never' && 'Nunca usei'}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              <TouchableOpacity
-                style={styles.logoutButton}
-                onPress={handleLogout}
-                activeOpacity={0.8}>
-                <Text style={styles.logoutButtonText}>Sair (resetar app)</Text>
-              </TouchableOpacity>
-            </ScrollView>
+          <View style={styles.programRow}>
+            <RNText style={styles.programLabel}>Dias ativos</RNText>
+            <RNText style={styles.programValue}>
+              {profile.program_start_date ? `${dias} dias` : '—'}
+            </RNText>
+          </View>
+          <View style={styles.programDivider} />
+
+          <View style={styles.programRow}>
+            <RNText style={styles.programLabel}>Status GLP-1</RNText>
+            <RNText style={styles.programValue}>{glp1Label(profile.glp1_status)}</RNText>
           </View>
         </View>
+
+        {/* Card Seu histórico */}
+        <View style={styles.historyCard}>
+          <RNText style={styles.historyTitle}>Seu histórico</RNText>
+          <View style={styles.historyGrid}>
+            {historyItems.map((item, idx) => (
+              <View key={idx} style={styles.historyCell}>
+                <Ionicons name={item.icon} size={22} color={colors.sageDark} />
+                <RNText style={styles.historyCellValue}>{item.value}</RNText>
+                <RNText style={styles.historyCellLabel}>{item.label}</RNText>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* Modal configurações */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setModalVisible(false)}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <RNText style={styles.modalTitle}>Configurações</RNText>
+            <Animated.View style={pressLogout.animatedStyle}>
+              <TouchableOpacity
+                onPressIn={pressLogout.onPressIn}
+                onPressOut={pressLogout.onPressOut}
+                onPress={handleLogout}
+                style={styles.logoutBtn}
+                activeOpacity={0.8}>
+                <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <RNText style={styles.logoutBtnText}>Sair da conta</RNText>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -215,117 +310,216 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#6B6B6B',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryBtn: {
+    backgroundColor: colors.sageDark,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  retryBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    paddingTop: spacing.sm,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: colors.text,
-  },
-  settingsButton: {
-    padding: spacing.xs,
-  },
-  container: {
+    color: '#1A1A1A',
     flex: 1,
-    backgroundColor: colors.background,
+    marginRight: 8,
   },
-  content: {
-    padding: spacing.lg,
+  settingsBtn: {
+    padding: 4,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 100,
+    gap: 16,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  // Card perfil
+  profileCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
     alignItems: 'center',
+    shadowColor: '#5C7A5C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  section: {
-    marginBottom: spacing.xl,
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
-  sectionTitle: {
-    ...typography.titleSmall,
-    color: colors.text,
-    marginBottom: spacing.md,
+  avatarInitial: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#fff',
   },
-  infoRow: {
+  profileName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  profileEmail: {
+    fontSize: 14,
+    color: '#6B6B6B',
+    marginBottom: 16,
+  },
+  editBtn: {
+    borderWidth: 1.5,
+    borderColor: colors.sageDark,
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  editBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.sageDark,
+  },
+  // Card programa
+  programCard: {
+    backgroundColor: '#EBF3EB',
+    borderRadius: 20,
+    padding: 20,
+  },
+  programTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.sageDark,
+    marginBottom: 16,
+  },
+  programRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    paddingVertical: 12,
   },
-  infoLabel: {
-    ...typography.body,
-    color: colors.textSecondary,
+  programDivider: {
+    height: 1,
+    backgroundColor: '#C8DEC8',
   },
-  infoValue: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
+  programLabel: {
+    fontSize: 13,
+    color: '#6B6B6B',
   },
-  warningText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-    lineHeight: 20,
+  programValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    flexShrink: 1,
+    textAlign: 'right',
+    marginLeft: 8,
   },
-  logoutButton: {
-    backgroundColor: '#DC3545',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+  // Card histórico
+  historyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#5C7A5C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  historyTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 16,
+  },
+  historyGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  historyCell: {
+    width: '47%',
+    borderWidth: 1,
+    borderColor: '#E8EDE8',
+    borderRadius: 16,
+    padding: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    marginTop: spacing.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: 4,
   },
-  logoutButtonText: {
-    ...typography.label,
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.white,
+  historyCellValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.sageDark,
   },
+  historyCellLabel: {
+    fontSize: 13,
+    color: '#6B6B6B',
+    textAlign: 'center',
+  },
+  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
+    justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: colors.white,
-    borderRadius: borderRadius.lg,
-    maxHeight: '80%',
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
+  modalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    marginBottom: 20,
   },
   modalTitle: {
-    ...typography.titleSmall,
-    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 24,
   },
-  modalScroll: {
-    maxHeight: 400,
+  logoutBtn: {
+    backgroundColor: '#DC3545',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  modalScrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
+  logoutBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

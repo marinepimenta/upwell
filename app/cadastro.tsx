@@ -10,6 +10,7 @@ import {
   ScrollView,
   Modal,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,12 +18,10 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/lib/supabase';
 import { colors, gradients } from '@/constants/theme';
+import UpWellLogoWhite from '@/components/UpWellLogoWhite';
 import { useFadeSlideIn, usePressScale } from '@/hooks/useEntrance';
-
-const USER_LOGGED_IN_KEY = '@upwell:user_logged_in';
-const USER_EMAIL_KEY = '@upwell:user_email';
-const USER_NAME_KEY = '@upwell:user_name';
 
 function passwordStrength(pwd: string): 'weak' | 'medium' | 'strong' {
   if (pwd.length < 6) return 'weak';
@@ -44,13 +43,19 @@ export default function CadastroScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [nameError, setNameError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [confirmPasswordError, setConfirmPasswordError] = useState('');
+  const [generalError, setGeneralError] = useState('');
   const [termsModalVisible, setTermsModalVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const pressBack = usePressScale();
   const pressCriar = usePressScale();
   const pressEntrar = usePressScale();
   const pressTerms = usePressScale();
+  const pressFazerLogin = usePressScale();
 
   const entrance0 = useFadeSlideIn(0);
   const entrance1 = useFadeSlideIn(80);
@@ -66,25 +71,105 @@ export default function CadastroScreen() {
   const strength = passwordStrength(password);
 
   const handleCriarConta = async () => {
-    const next: Record<string, string> = {};
-    if (!name.trim()) next.name = 'Preencha seu nome.';
-    if (!email.trim()) next.email = 'Preencha seu email.';
-    else if (!isValidEmail(email)) next.email = 'Email inválido.';
-    if (!password.trim()) next.password = 'Preencha sua senha.';
-    else if (password.length < 6) next.password = 'A senha deve ter pelo menos 6 caracteres.';
-    if (password !== confirmPassword) next.confirmPassword = 'As senhas não coincidem.';
-    if (!acceptTerms) next.terms = 'Aceite os termos para continuar.';
-    setErrors(next);
-    if (Object.keys(next).length > 0) return;
-
-    try {
-      await AsyncStorage.setItem(USER_LOGGED_IN_KEY, 'true');
-      await AsyncStorage.setItem(USER_EMAIL_KEY, email.trim());
-      await AsyncStorage.setItem(USER_NAME_KEY, name.trim());
-      router.replace('/(onboarding)/nome');
-    } catch (e) {
-      setErrors({ form: 'Não foi possível criar a conta. Tente novamente.' });
+    // validações locais primeiro
+    if (!name.trim()) {
+      setNameError('Digite seu nome');
+      setEmailError('');
+      setPasswordError('');
+      setConfirmPasswordError('');
+      setGeneralError('');
+      return;
     }
+    if (!email.trim() || !email.includes('@')) {
+      setEmailError('Digite um email válido');
+      setNameError('');
+      setPasswordError('');
+      setConfirmPasswordError('');
+      setGeneralError('');
+      return;
+    }
+    if (password.length < 6) {
+      setPasswordError('A senha precisa ter pelo menos 6 caracteres');
+      setNameError('');
+      setEmailError('');
+      setConfirmPasswordError('');
+      setGeneralError('');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setConfirmPasswordError('As senhas não coincidem');
+      setNameError('');
+      setEmailError('');
+      setPasswordError('');
+      setGeneralError('');
+      return;
+    }
+    if (!acceptTerms) {
+      setGeneralError('Aceite os termos para continuar');
+      setNameError('');
+      setEmailError('');
+      setPasswordError('');
+      setConfirmPasswordError('');
+      return;
+    }
+
+    setLoading(true);
+    setGeneralError('');
+    setNameError('');
+    setEmailError('');
+    setPasswordError('');
+    setConfirmPasswordError('');
+
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: {
+        data: { name: name.trim() },
+      },
+    });
+
+    if (error) {
+      if (
+        error.message.includes('already registered') ||
+        error.message.includes('User already registered') ||
+        error.message.includes('email_exists') ||
+        error.status === 422
+      ) {
+        setEmailError('Este email já está cadastrado. Faça login ou use outro email.');
+      } else if (error.message.includes('invalid email')) {
+        setEmailError('Email inválido. Verifique e tente novamente.');
+      } else if (error.message.includes('weak_password') || error.message.includes('Password')) {
+        setPasswordError('Senha muito fraca. Use pelo menos 6 caracteres.');
+      } else {
+        setGeneralError('Erro ao criar conta. Tente novamente.');
+      }
+      setLoading(false);
+      return;
+    }
+
+    if (data.user && data.user.identities && data.user.identities.length === 0) {
+      setEmailError('Este email já está cadastrado. Faça login ou use outro email.');
+      setLoading(false);
+      return;
+    }
+
+    if (!data.user) {
+      setGeneralError('Erro ao criar conta. Tente novamente.');
+      setLoading(false);
+      return;
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+    }
+
+    await AsyncStorage.setItem('temp_name', name.trim());
+    router.replace('/(onboarding)/nome');
+    setLoading(false);
   };
 
   return (
@@ -113,8 +198,7 @@ export default function CadastroScreen() {
                 </TouchableOpacity>
               </Animated.View>
               <View style={styles.headerCenter}>
-                <Ionicons name="leaf" size={32} color="#FFFFFF" />
-                <RNText style={styles.logoText}>UpWell</RNText>
+                <UpWellLogoWhite width={180} height={68} />
               </View>
               <View style={styles.backBtn} />
             </Animated.View>
@@ -132,11 +216,16 @@ export default function CadastroScreen() {
                     placeholder="Seu nome"
                     placeholderTextColor="rgba(255,255,255,0.6)"
                     value={name}
-                    onChangeText={(t) => { setName(t); setErrors((e) => ({ ...e, name: '' })); }}
+                    onChangeText={(t) => { setName(t); setNameError(''); }}
                     autoCapitalize="words"
                   />
                 </View>
-                {errors.name ? <RNText style={styles.errorText}>{errors.name}</RNText> : null}
+                {nameError ? (
+                  <View style={styles.inlineErrorWrap}>
+                    <Ionicons name="alert-circle-outline" size={14} color="#FFFFFF" />
+                    <RNText style={styles.inlineErrorText}>{nameError}</RNText>
+                  </View>
+                ) : null}
               </Animated.View>
 
               <Animated.View style={entrance3}>
@@ -147,12 +236,32 @@ export default function CadastroScreen() {
                     placeholder="Seu email"
                     placeholderTextColor="rgba(255,255,255,0.6)"
                     value={email}
-                    onChangeText={(t) => { setEmail(t); setErrors((e) => ({ ...e, email: '' })); }}
+                    onChangeText={(t) => { setEmail(t); setEmailError(''); }}
                     keyboardType="email-address"
                     autoCapitalize="none"
                   />
                 </View>
-                {errors.email ? <RNText style={styles.errorText}>{errors.email}</RNText> : null}
+                {emailError ? (
+                  <>
+                    <View style={styles.inlineErrorWrap}>
+                      <Ionicons name="alert-circle-outline" size={14} color="#FFFFFF" />
+                      <RNText style={styles.inlineErrorText}>{emailError}</RNText>
+                    </View>
+                    {emailError === 'Este email já está cadastrado. Faça login ou use outro email.' && (
+                      <Animated.View style={[styles.linkFazerLoginWrap, pressFazerLogin.animatedStyle]}>
+                        <TouchableOpacity
+                          onPressIn={pressFazerLogin.onPressIn}
+                          onPressOut={pressFazerLogin.onPressOut}
+                          onPress={() => router.replace('/login')}
+                          style={styles.linkFazerLogin}
+                          activeOpacity={0.8}
+                        >
+                          <RNText style={styles.linkFazerLoginText}>Já tem conta? Fazer login</RNText>
+                        </TouchableOpacity>
+                      </Animated.View>
+                    )}
+                  </>
+                ) : null}
               </Animated.View>
 
               <Animated.View style={entrance4}>
@@ -163,7 +272,7 @@ export default function CadastroScreen() {
                     placeholder="Sua senha"
                     placeholderTextColor="rgba(255,255,255,0.6)"
                     value={password}
-                    onChangeText={(t) => { setPassword(t); setErrors((e) => ({ ...e, password: '' })); }}
+                    onChangeText={(t) => { setPassword(t); setPasswordError(''); }}
                     secureTextEntry={!showPassword}
                   />
                   <TouchableOpacity
@@ -201,7 +310,12 @@ export default function CadastroScreen() {
                     ]}
                   />
                 </View>
-                {errors.password ? <RNText style={styles.errorText}>{errors.password}</RNText> : null}
+                {passwordError ? (
+                  <View style={styles.inlineErrorWrap}>
+                    <Ionicons name="alert-circle-outline" size={14} color="#FFFFFF" />
+                    <RNText style={styles.inlineErrorText}>{passwordError}</RNText>
+                  </View>
+                ) : null}
               </Animated.View>
 
               <Animated.View style={entrance5}>
@@ -214,7 +328,7 @@ export default function CadastroScreen() {
                     value={confirmPassword}
                     onChangeText={(t) => {
                       setConfirmPassword(t);
-                      setErrors((e) => ({ ...e, confirmPassword: '' }));
+                      setConfirmPasswordError('');
                     }}
                     secureTextEntry={!showConfirmPassword}
                   />
@@ -230,8 +344,11 @@ export default function CadastroScreen() {
                     />
                   </TouchableOpacity>
                 </View>
-                {errors.confirmPassword ? (
-                  <RNText style={styles.errorText}>{errors.confirmPassword}</RNText>
+                {confirmPasswordError ? (
+                  <View style={styles.inlineErrorWrap}>
+                    <Ionicons name="alert-circle-outline" size={14} color="#FFFFFF" />
+                    <RNText style={styles.inlineErrorText}>{confirmPasswordError}</RNText>
+                  </View>
                 ) : null}
               </Animated.View>
 
@@ -240,7 +357,7 @@ export default function CadastroScreen() {
                   <TouchableOpacity
                     onPressIn={pressTerms.onPressIn}
                     onPressOut={pressTerms.onPressOut}
-                    onPress={() => setAcceptTerms((v) => !v)}
+                    onPress={() => { setAcceptTerms((v) => !v); setGeneralError(''); }}
                     style={styles.termsRow}
                     activeOpacity={1}
                   >
@@ -261,10 +378,14 @@ export default function CadastroScreen() {
                     </RNText>
                   </TouchableOpacity>
                 </Animated.View>
-                {errors.terms ? <RNText style={styles.errorText}>{errors.terms}</RNText> : null}
               </Animated.View>
 
-              {errors.form ? <RNText style={styles.errorText}>{errors.form}</RNText> : null}
+              {generalError ? (
+                <View style={styles.generalErrorCard}>
+                  <Ionicons name="alert-circle-outline" size={16} color="#FFFFFF" style={styles.generalErrorIcon} />
+                  <RNText style={styles.generalErrorText}>{generalError}</RNText>
+                </View>
+              ) : null}
 
               <Animated.View style={[styles.btnWrap, entrance7]}>
                 <Animated.View style={pressCriar.animatedStyle}>
@@ -274,8 +395,13 @@ export default function CadastroScreen() {
                     onPress={handleCriarConta}
                     style={styles.btnCriar}
                     activeOpacity={1}
+                    disabled={loading}
                   >
-                    <RNText style={styles.btnCriarText}>Criar conta</RNText>
+                    {loading ? (
+                      <ActivityIndicator color={colors.sageDark} />
+                    ) : (
+                      <RNText style={styles.btnCriarText}>Criar conta</RNText>
+                    )}
                   </TouchableOpacity>
                 </Animated.View>
               </Animated.View>
@@ -346,13 +472,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logoText: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 1,
-    marginLeft: 8,
-  },
   card: {
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderWidth: 1,
@@ -420,10 +539,55 @@ const styles = StyleSheet.create({
   termsLink: {
     textDecorationLine: 'underline',
   },
-  errorText: {
+  inlineErrorWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  inlineErrorText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#FFFFFF',
+  },
+  generalErrorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  generalErrorIcon: {
+    marginRight: 8,
+  },
+  generalErrorText: {
+    flex: 1,
     fontSize: 14,
-    color: 'rgba(255,99,99,0.9)',
+    color: '#FFFFFF',
+  },
+  linkFazerLoginWrap: {
+    marginTop: 8,
     marginBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  linkFazerLogin: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  linkFazerLoginText: {
+    fontSize: 13,
+    color: '#FFFFFF',
+    textDecorationLine: 'underline',
   },
   btnWrap: { marginTop: 8 },
   btnCriar: {

@@ -13,16 +13,15 @@ import {
   ViewStyle,
   TextStyle,
   StyleProp,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/lib/supabase';
 import { colors, gradients, spacing } from '@/constants/theme';
-
-const USER_LOGGED_IN_KEY = '@upwell:user_logged_in';
-const USER_EMAIL_KEY = '@upwell:user_email';
+import UpWellLogoWhite from '@/components/UpWellLogoWhite';
 
 const CARD_MARGIN_H = 24;
 const GAP_24 = 24;
@@ -32,7 +31,6 @@ const ON_DARK_SUBTLE = 'rgba(255,255,255,0.8)';
 const INPUT_PLACEHOLDER = 'rgba(255,255,255,0.6)';
 const DIVIDER_LINE = 'rgba(255,255,255,0.25)';
 const FOOTER_HINT = 'rgba(255,255,255,0.7)';
-const ERROR_COLOR = 'rgba(255,99,99,0.9)';
 const CARD_GLASS = {
   backgroundColor: 'rgba(255,255,255,0.15)',
   borderWidth: 1,
@@ -48,12 +46,15 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [generalError, setGeneralError] = useState('');
   const [forgotModalVisible, setForgotModalVisible] = useState(false);
   const [socialModalVisible, setSocialModalVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleEntrar = async () => {
     setEmailError('');
     setPasswordError('');
+    setGeneralError('');
     if (!email.trim()) {
       setEmailError('Preencha seu email.');
       return;
@@ -62,13 +63,28 @@ export default function LoginScreen() {
       setPasswordError('Preencha sua senha.');
       return;
     }
-    try {
-      await AsyncStorage.setItem(USER_LOGGED_IN_KEY, 'true');
-      await AsyncStorage.setItem(USER_EMAIL_KEY, email.trim());
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) {
+      if (
+        error.message.includes('Invalid login credentials') ||
+        error.message.includes('invalid_credentials')
+      ) {
+        setGeneralError('Email ou senha incorretos. Verifique seus dados.');
+      } else if (error.message.includes('Email not confirmed')) {
+        setGeneralError('Confirme seu email antes de entrar. Verifique sua caixa de entrada.');
+      } else if (error.message.includes('too many requests')) {
+        setGeneralError('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
+      } else {
+        setGeneralError('Erro ao entrar. Tente novamente.');
+      }
+    } else {
       router.replace('/(tabs)');
-    } catch (e) {
-      setPasswordError('Não foi possível entrar. Tente novamente.');
     }
+    setLoading(false);
   };
 
   return (
@@ -85,11 +101,8 @@ export default function LoginScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.branding as ViewStyle}>
-              <View>
-                <Ionicons name="leaf" size={44} color={ON_DARK} />
-              </View>
-              <View>
-                <RNText style={styles.logoText as TextStyle}>UpWell</RNText>
+              <View style={{ alignItems: 'center' }}>
+                <UpWellLogoWhite width={240} height={90} />
               </View>
               <View>
                 <RNText style={styles.tagline as TextStyle}>Sua jornada de 90 dias</RNText>
@@ -116,6 +129,7 @@ export default function LoginScreen() {
                     onChangeText={(t) => {
                       setEmail(t);
                       setEmailError('');
+                      setGeneralError('');
                     }}
                     keyboardType="email-address"
                     autoCapitalize="none"
@@ -124,7 +138,7 @@ export default function LoginScreen() {
                 </View>
                 {emailError ? (
                   <View style={styles.inlineErrorWrap as ViewStyle}>
-                    <Ionicons name="alert-circle-outline" size={14} color={ERROR_COLOR} />
+                    <Ionicons name="alert-circle-outline" size={14} color="#FFFFFF" />
                     <RNText style={styles.inlineErrorText as TextStyle}>{emailError}</RNText>
                   </View>
                 ) : null}
@@ -143,6 +157,7 @@ export default function LoginScreen() {
                     onChangeText={(t) => {
                       setPassword(t);
                       setPasswordError('');
+                      setGeneralError('');
                     }}
                     secureTextEntry={!showPassword}
                   />
@@ -156,11 +171,18 @@ export default function LoginScreen() {
                 </View>
                 {passwordError ? (
                   <View style={styles.inlineErrorWrap as ViewStyle}>
-                    <Ionicons name="alert-circle-outline" size={14} color={ERROR_COLOR} />
+                    <Ionicons name="alert-circle-outline" size={14} color="#FFFFFF" />
                     <RNText style={styles.inlineErrorText as TextStyle}>{passwordError}</RNText>
                   </View>
                 ) : null}
               </View>
+
+              {generalError ? (
+                <View style={styles.generalErrorCard as ViewStyle}>
+                  <Ionicons name="alert-circle-outline" size={16} color="#FFFFFF" style={styles.generalErrorIcon as TextStyle} />
+                  <RNText style={styles.generalErrorText as TextStyle}>{generalError}</RNText>
+                </View>
+              ) : null}
 
               <View style={[styles.esqueciWrap as ViewStyle]}>
                 <TouchableOpacity onPress={() => setForgotModalVisible(true)} activeOpacity={0.8}>
@@ -169,8 +191,17 @@ export default function LoginScreen() {
               </View>
 
               <View style={[styles.btnWrap as ViewStyle]}>
-                <TouchableOpacity onPress={handleEntrar} style={styles.btnEntrar as ViewStyle} activeOpacity={0.8}>
-                  <RNText style={styles.btnEntrarText as TextStyle}>Entrar</RNText>
+                <TouchableOpacity
+                  onPress={handleEntrar}
+                  style={styles.btnEntrar as ViewStyle}
+                  activeOpacity={0.8}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={colors.sageDark} />
+                  ) : (
+                    <RNText style={styles.btnEntrarText as TextStyle}>Entrar</RNText>
+                  )}
                 </TouchableOpacity>
               </View>
 
@@ -246,14 +277,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: GAP_24,
   },
-  logoText: {
-    fontSize: 36,
-    fontWeight: '800',
-    lineHeight: 44,
-    color: ON_DARK,
-    letterSpacing: 2,
-    marginTop: 8,
-  },
   tagline: {
     fontSize: 15,
     fontWeight: '400',
@@ -303,12 +326,37 @@ const styles = StyleSheet.create({
   inlineErrorWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
     gap: 6,
+    marginTop: 6,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   inlineErrorText: {
+    flex: 1,
     fontSize: 13,
-    color: ERROR_COLOR,
+    fontWeight: '500',
+    color: '#FFFFFF',
+  },
+  generalErrorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 8,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
+    padding: 12,
+  },
+  generalErrorIcon: {
+    marginRight: 8,
+  },
+  generalErrorText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#FFFFFF',
   },
   esqueciWrap: { alignItems: 'flex-end', marginBottom: spacing.md },
   esqueciText: {

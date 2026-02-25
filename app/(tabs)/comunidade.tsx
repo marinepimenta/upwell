@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, View, Text as RNText } from 'react-native';
+import { StyleSheet, ScrollView, View, Text as RNText, ActivityIndicator } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { Text as ThemedText } from '@/components/Themed';
 import { colors, gradients, shadows, radius, spacing, typography } from '@/constants/theme';
 import { useFadeSlideIn } from '@/hooks/useEntrance';
 import { getStreak } from '@/utils/storage';
+import { calculateStreak } from '@/lib/database';
 
 const FEED_ITEMS = [
   { id: '1', icon: '🎉', text: 'Alguém completou 30 dias consecutivos', time: 'há 12 minutos' },
@@ -40,10 +41,13 @@ function FeedItemCard({
 
 export default function ComunidadeScreen() {
   const [streak, setStreak] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const s = await getStreak();
-    setStreak(s);
+    const s = await calculateStreak();
+    if (s > 0) setStreak(s);
+    else setStreak(await getStreak());
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -55,6 +59,14 @@ export default function ComunidadeScreen() {
       load();
     }, [])
   );
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.sageDark} />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -216,5 +228,11 @@ const styles = StyleSheet.create({
   userCardBody: {
     ...typography.body,
     color: colors.text,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
   },
 });

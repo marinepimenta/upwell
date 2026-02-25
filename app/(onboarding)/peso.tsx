@@ -13,7 +13,8 @@ import { useRouter } from 'expo-router';
 import { Text } from '@/components/Themed';
 import { UpWellColors } from '@/constants/Colors';
 import { spacing, borderRadius, typography } from '@/constants/theme';
-import { saveOnboardingData } from '@/utils/storage';
+import { getOnboardingData, saveOnboardingData } from '@/utils/storage';
+import { supabase } from '@/lib/supabase';
 
 export default function PesoScreen() {
   const [weight, setWeight] = useState('');
@@ -34,15 +35,28 @@ export default function PesoScreen() {
   const handleComplete = async () => {
     const weightNum = parseFloat(weight);
     if (weightNum > 0 && weightNum < 500) {
-      // Validação: peso entre 0 e 500kg
+      const existing = await getOnboardingData();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({
+            name: existing?.name ?? '',
+            weight_initial: weightNum,
+            weight_current: weightNum,
+            glp1_status: existing?.glp1Status ?? 'never',
+            main_fear: existing?.mainFear ?? 'rebound',
+            program_start_date: new Date().toISOString().split('T')[0],
+            onboarding_completed: true,
+          })
+          .eq('id', user.id);
+      }
       await saveOnboardingData({
         currentWeight: weightNum,
         onboardingCompleted: true,
         onboardingDate: new Date().toISOString(),
       });
-      // Aguardar um pouco para garantir que o AsyncStorage salvou
       await new Promise(resolve => setTimeout(resolve, 100));
-      // Resetar navegação e ir para tabs
       router.replace('/(tabs)');
     }
   };

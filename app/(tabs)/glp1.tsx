@@ -26,14 +26,21 @@ import { colors, gradients, shadows, radius, spacing, typography } from '@/const
 import { useFadeSlideIn, usePressScale } from '@/hooks/useEntrance';
 import {
   getOnboardingData,
-  getGlp1Applications,
-  getNextGlp1ApplicationDate,
-  saveGlp1Application,
-  getGlp1SymptomsRecords,
-  saveGlp1SymptomsRecord,
+  getGlp1Applications as getGlp1ApplicationsStorage,
+  getNextGlp1ApplicationDate as getNextGlp1ApplicationDateStorage,
+  saveGlp1Application as saveGlp1ApplicationStorage,
+  getGlp1SymptomsRecords as getGlp1SymptomsRecordsStorage,
+  saveGlp1SymptomsRecord as saveGlp1SymptomsRecordStorage,
   type Glp1Application,
   type Glp1SymptomsRecord,
 } from '@/utils/storage';
+import {
+  getGlp1Applications as getGlp1ApplicationsDb,
+  getNextGlp1ApplicationDate as getNextGlp1ApplicationDateDb,
+  saveGlp1Application as saveGlp1ApplicationDb,
+  getGlp1Symptoms as getGlp1SymptomsDb,
+  saveGlp1Symptoms as saveGlp1SymptomsDb,
+} from '@/lib/database';
 
 const MEDICATIONS = ['Ozempic', 'Mounjaro', 'Wegovy', 'Outro'];
 const DOSES = ['0.25mg', '0.5mg', '1mg', '2mg', 'Outro'];
@@ -200,14 +207,25 @@ export default function Glp1CompanionScreen() {
   const pressGerarRelatorio = usePressScale();
 
   const load = async () => {
-    const [apps, next, symptoms] = await Promise.all([
-      getGlp1Applications(),
-      getNextGlp1ApplicationDate(),
-      getGlp1SymptomsRecords(),
+    const [appsDb, nextDb, symptomsDb] = await Promise.all([
+      getGlp1ApplicationsDb(),
+      getNextGlp1ApplicationDateDb(),
+      getGlp1SymptomsDb(),
     ]);
-    setApplications(apps.sort((a, b) => b.date.localeCompare(a.date)));
-    setNextDate(next);
-    setSymptomsRecords(symptoms.sort((a, b) => b.date.localeCompare(a.date)));
+    if (appsDb.length > 0 || symptomsDb.length > 0) {
+      setApplications(appsDb.sort((a, b) => b.date.localeCompare(a.date)));
+      setNextDate(nextDb);
+      setSymptomsRecords(symptomsDb.sort((a, b) => b.date.localeCompare(a.date)));
+    } else {
+      const [apps, next, symptoms] = await Promise.all([
+        getGlp1ApplicationsStorage(),
+        getNextGlp1ApplicationDateStorage(),
+        getGlp1SymptomsRecordsStorage(),
+      ]);
+      setApplications(apps.sort((a, b) => b.date.localeCompare(a.date)));
+      setNextDate(next);
+      setSymptomsRecords(symptoms.sort((a, b) => b.date.localeCompare(a.date)));
+    }
     setLoading(false);
   };
 
@@ -224,12 +242,14 @@ export default function Glp1CompanionScreen() {
   const handleConfirmarAplicacao = async () => {
     if (!medication || !dose) return;
     const today = new Date().toISOString().slice(0, 10);
-    await saveGlp1Application({
+    const payload: Glp1Application = {
       date: today,
       medication,
       dose,
       observation: observation.trim() || undefined,
-    });
+    };
+    await saveGlp1ApplicationDb(payload);
+    await saveGlp1ApplicationStorage(payload);
     setModalAplicacaoVisible(false);
     setMedication(null);
     setDose(null);
@@ -250,15 +270,15 @@ export default function Glp1CompanionScreen() {
   };
 
   const handleSalvarSintomas = async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    await saveGlp1SymptomsRecord({ date: today, symptoms: selectedSymptoms });
+    await saveGlp1SymptomsDb(selectedSymptoms);
+    await saveGlp1SymptomsRecordStorage({ date: new Date().toISOString().slice(0, 10), symptoms: selectedSymptoms });
     setSelectedSymptoms([]);
     load();
   };
 
   const handleGerarRelatorio = async () => {
-    const apps = await getGlp1Applications();
-    const symptoms = await getGlp1SymptomsRecords();
+    const apps = applications.length > 0 ? applications : await getGlp1ApplicationsStorage();
+    const symptoms = symptomsRecords.length > 0 ? symptomsRecords : await getGlp1SymptomsRecordsStorage();
     const now = new Date();
     const monthAgo = new Date(now);
     monthAgo.setMonth(monthAgo.getMonth() - 1);

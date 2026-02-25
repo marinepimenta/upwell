@@ -24,8 +24,7 @@ import { Text } from '@/components/Themed';
 import { colors, gradients, shadows, radius, spacing, typography } from '@/constants/theme';
 import { useFadeSlideIn, usePressScale } from '@/hooks/useEntrance';
 import {
-  getCheckinByDate,
-  saveCheckin,
+  saveCheckin as saveCheckinStorage,
   getShieldUsedThisWeek,
   setShieldUsedThisWeek,
   type CheckinData,
@@ -33,6 +32,7 @@ import {
   type HumorCheckin,
   type ContextoAlimentar,
 } from '@/utils/storage';
+import { getTodayCheckin as getTodayCheckinDb, saveCheckin as saveCheckinDb, localDateStr } from '@/lib/database';
 
 const CONTEXTOS: { label: string; value: ContextoAlimentar }[] = [
   { label: 'Evento social', value: 'evento_social' },
@@ -43,7 +43,7 @@ const CONTEXTOS: { label: string; value: ContextoAlimentar }[] = [
 
 export default function CheckinScreen() {
   const router = useRouter();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
 
   const [existing, setExisting] = useState<CheckinData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,11 +68,11 @@ export default function CheckinScreen() {
 
   useEffect(() => {
     (async () => {
-      const [c, used] = await Promise.all([
-        getCheckinByDate(today),
+      const [cDb, used] = await Promise.all([
+        getTodayCheckinDb(),
         getShieldUsedThisWeek(),
       ]);
-      setExisting(c ?? null);
+      setExisting(cDb ?? null);
       setShieldUsedThisWeekState(used);
       setLoading(false);
     })();
@@ -107,7 +107,7 @@ export default function CheckinScreen() {
     if (!allAnswered || submitting) return;
     setSubmitting(true);
     try {
-      await saveCheckin({
+      const payload: CheckinData = {
         date: today,
         treinou: treinou!,
         bebeuAgua: bebeuAgua!,
@@ -117,7 +117,9 @@ export default function CheckinScreen() {
         textoLivre: textoLivre.trim() || undefined,
         humor: humor!,
         escudoAtivado,
-      });
+      };
+      await saveCheckinDb(payload);
+      await saveCheckinStorage(payload);
       setShowSuccess(true);
       successOpacity.value = withSpring(1, { damping: 15, stiffness: 120 });
       successScale.value = withSequence(
@@ -163,32 +165,65 @@ export default function CheckinScreen() {
   }
 
   if (existing) {
+    const alimentacaoLabel =
+      existing.adesaoAlimentar === 'sim'
+        ? { text: '✅ Sim', color: '#1A1A1A' }
+        : existing.adesaoAlimentar === 'mais_ou_menos'
+        ? { text: 'Mais ou menos', color: '#C4846A' }
+        : { text: '❌ Não', color: '#1A1A1A' };
+
+    const humorLabel =
+      existing.humor === 'bem'
+        ? '😊 Bem'
+        : existing.humor === 'normal'
+        ? '😐 Normal'
+        : '😔 Cansada';
+
+    const rows: { label: string; value: string; valueColor?: string }[] = [
+      { label: 'Treinou', value: existing.treinou ? '✅ Sim' : '❌ Não' },
+      { label: 'Bebeu água', value: existing.bebeuAgua ? '✅ Sim' : '❌ Não' },
+      { label: 'Dormiu bem', value: existing.dormiuBem ? '✅ Sim' : '❌ Não' },
+      { label: 'Alimentação', value: alimentacaoLabel.text, valueColor: alimentacaoLabel.color },
+      { label: 'Humor', value: humorLabel },
+    ];
+
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.headerTitle}>Check-in de hoje</Text>
-          <RNText style={styles.headerDate}>{formatDate()}</RNText>
-          <Text style={styles.resumoLabel}>Resumo do seu dia</Text>
-          <View style={styles.card}>
-            <Text style={styles.resumoLine}>Treinou: {existing.treinou ? 'Sim' : 'Não'}</Text>
-            <Text style={styles.resumoLine}>Bebeu água: {existing.bebeuAgua ? 'Sim' : 'Não'}</Text>
-            <Text style={styles.resumoLine}>Dormiu bem: {existing.dormiuBem ? 'Sim' : 'Não'}</Text>
-            <Text style={styles.resumoLine}>Alimentação: {existing.adesaoAlimentar}</Text>
-            <Text style={styles.resumoLine}>Humor: {existing.humor}</Text>
-            {existing.textoLivre ? (
-              <Text style={styles.resumoLine}>Observação: {existing.textoLivre}</Text>
-            ) : null}
-            {existing.escudoAtivado && (
-              <Text style={styles.resumoLine}>Escudo ativado ✓</Text>
-            )}
-          </View>
-          <Text style={styles.resumoInfo}>Você já fez seu check-in de hoje. Volte amanhã!</Text>
-        </ScrollView>
-      </SafeAreaView>
+      <LinearGradient
+        colors={gradients.gradientHeader}
+        style={styles.safeArea}
+      >
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 40 }}
+          >
+            <View style={styles.existingHeader}>
+              <RNText style={styles.existingTitle}>Check-in de hoje</RNText>
+              <RNText style={styles.existingDate}>{formatDate()}</RNText>
+              <RNText style={styles.existingSubtitle}>Menos de 1 minuto. Você consegue 💚</RNText>
+            </View>
+
+            <View style={styles.existingCard}>
+              <RNText style={styles.existingCardTitle}>Resumo do seu dia</RNText>
+              {rows.map((row, idx) => (
+                <View key={row.label}>
+                  <View style={styles.existingRow}>
+                    <RNText style={styles.existingRowLabel}>{row.label}</RNText>
+                    <RNText style={[styles.existingRowValue, row.valueColor ? { color: row.valueColor } : null]}>
+                      {row.value}
+                    </RNText>
+                  </View>
+                  {idx < rows.length - 1 && <View style={styles.existingDivider} />}
+                </View>
+              ))}
+            </View>
+
+            <RNText style={styles.existingFooter}>
+              Você já fez seu check-in de hoje. Volte amanhã! 🌱
+            </RNText>
+          </ScrollView>
+        </SafeAreaView>
+      </LinearGradient>
     );
   }
 
@@ -730,6 +765,69 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.md,
     fontStyle: 'italic',
+  },
+  existingHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 8,
+  },
+  existingTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 6,
+  },
+  existingDate: {
+    fontSize: 14,
+    color: '#6B6B6B',
+    marginBottom: 6,
+    textTransform: 'capitalize',
+  },
+  existingSubtitle: {
+    fontSize: 13,
+    color: '#5C7A5C',
+  },
+  existingCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    marginHorizontal: 20,
+    marginTop: 16,
+    ...shadows.card,
+  },
+  existingCardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  existingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  existingRowLabel: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: '#6B6B6B',
+  },
+  existingRowValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  existingDivider: {
+    height: 1,
+    backgroundColor: '#E8EDE8',
+  },
+  existingFooter: {
+    fontSize: 14,
+    color: '#6B6B6B',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 20,
+    paddingHorizontal: 20,
   },
   successContainer: {
     flex: 1,

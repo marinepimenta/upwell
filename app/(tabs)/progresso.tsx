@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -15,22 +15,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text as ThemedText } from '@/components/Themed';
 import { colors, shadows, radius, spacing, typography } from '@/constants/theme';
 import { useFadeSlideIn } from '@/hooks/useEntrance';
+import type { CheckinData } from '@/utils/storage';
 import {
-  getOnboardingData,
-  getCheckins,
-  getStreak,
-  getCheckinsForMonth,
-  getMonthCalendar,
-  getBestStreakInMonth,
-  getMonthMetrics,
-  getContextosFrequentes,
-} from '@/utils/storage';
+  getProfile,
+  getCheckinsByMonth,
+  getWeightRecords,
+  getMonthlyMetrics,
+  localDateStr,
+  type MonthlyMetrics,
+} from '@/lib/database';
 
 const chartWidth = Dimensions.get('window').width - 80;
 
-// Dados mockados: 8 pontos S1–S8
-const MOCK_WEIGHT_DATA = [82, 81.5, 81.2, 80.8, 80.9, 80.5, 80.2, 80.0];
-const CHART_LABELS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8'];
+const emptyMessageCheckins = 'Faça seu primeiro check-in para começar a ver seu progresso aqui 🌱';
+const emptyMessagePeso = 'Registre seu primeiro peso para ver sua evolução aqui 🌱';
 
 // Sombra md do design system
 const shadowMd = {
@@ -55,8 +53,6 @@ const chartConfig = {
   fillShadowGradientOpacity: 0.12,
 };
 
-const emptyMessage = 'Faça seu primeiro check-in para começar a ver seu progresso aqui 🌱';
-
 const WEEKDAY_LABELS = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
 
 function getCalendarGrid(
@@ -79,50 +75,101 @@ function getCalendarGrid(
   return rows;
 }
 
+const CONTEXTOS_MAP: Record<string, string> = {
+  'evento_social': 'eventos sociais',
+  'ansiedade_estresse': 'ansiedade ou estresse',
+  'fome_fora_de_hora': 'fome fora de hora',
+  'nao_tive_opcao_melhor': 'falta de opção',
+};
+
 export default function ProgressoScreen() {
   const [loading, setLoading] = useState(true);
-  const [checkins, setCheckins] = useState<Awaited<ReturnType<typeof getCheckins>>>([]);
-  const [streak, setStreak] = useState(0);
-  const [pesoInicial, setPesoInicial] = useState<number | null>(null);
-  const [pesoAtual, setPesoAtual] = useState<number | null>(null);
+  const [checkins, setCheckins] = useState<CheckinData[]>([]);
+  const [weightRecords, setWeightRecords] = useState<{ date: string; weight: number }[]>([]);
+  const [profile, setProfile] = useState<{ weight_initial: number | null; weight_current: number | null } | null>(null);
+  const [monthlyMetrics, setMonthlyMetrics] = useState<MonthlyMetrics | null>(null);
 
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  const monthCalendar = getMonthCalendar(checkins, year, month);
-  const calendarGrid = getCalendarGrid(monthCalendar, year, month);
-  const checkinsNoMes = getCheckinsForMonth(checkins, year, month);
-  const bestStreakMonth = getBestStreakInMonth(checkins, year, month);
-  const metrics = getMonthMetrics(checkins, year, month);
-  const contextosFreq = getContextosFrequentes(checkins);
-  const hasAnyCheckin = checkins.length > 0;
-
-  const load = async () => {
-    const [list, str, onboarding] = await Promise.all([
-      getCheckins(),
-      getStreak(),
-      getOnboardingData(),
-    ]);
-    setCheckins(list);
-    setStreak(str);
-    setPesoInicial(onboarding?.initialWeight ?? null);
-    setPesoAtual(onboarding?.currentWeight ?? null);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
+  const todayStr = localDateStr(now);
 
   useFocusEffect(
     useCallback(() => {
+      const load = async () => {
+        setLoading(true);
+        const [p, records, list, m] = await Promise.all([
+          getProfile(),
+          getWeightRecords(),
+          getCheckinsByMonth(year, month),
+          getMonthlyMetrics(),
+        ]);
+        setProfile(p ? { weight_initial: p.weight_initial ?? null, weight_current: p.weight_current ?? null } : null);
+        setWeightRecords(records.map((r) => ({ date: r.date, weight: r.weight })));
+        setCheckins(list);
+        setMonthlyMetrics(m);
+        setLoading(false);
+      };
       load();
     }, [])
   );
 
-  const pesoIni = pesoInicial ?? pesoAtual ?? MOCK_WEIGHT_DATA[0];
-  const pesoCur = pesoAtual ?? pesoInicial ?? MOCK_WEIGHT_DATA[MOCK_WEIGHT_DATA.length - 1];
-  const variacao = pesoCur - pesoIni;
+  // Calendário construído a partir dos dates reais (sem parsear timezone)
+  const checkinDates = new Set(checkins.map((c) => c.date));
+  const shieldDates = new Set(checkins.filter((c) => c.escudoAtivado).map((c) => c.date));
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const monthCalendar = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return {
+      dateStr,
+      dayOfMonth: day,
+      done: checkinDates.has(dateStr) && !shieldDates.has(dateStr),
+      shield: shieldDates.has(dateStr),
+    };
+  });
+  const calendarGrid = getCalendarGrid(monthCalendar, year, month);
+
+  // Melhor sequência calculada a partir das datas ordenadas
+  const sortedDates = [...checkinDates].sort();
+  let bestStreakMonth = 0;
+  let cur = 0;
+  for (let i = 0; i < sortedDates.length; i++) {
+    if (i === 0) {
+      cur = 1;
+    } else {
+      const prevMs = new Date(sortedDates[i - 1] + 'T12:00:00').getTime();
+      const currMs = new Date(sortedDates[i] + 'T12:00:00').getTime();
+      const diffDays = Math.round((currMs - prevMs) / 86400000);
+      cur = diffDays === 1 ? cur + 1 : 1;
+    }
+    bestStreakMonth = Math.max(bestStreakMonth, cur);
+  }
+
+  const hasAnyCheckin = checkins.length > 0;
+
+  // Peso
+  const hasWeightData = weightRecords.length > 0 || (profile?.weight_initial != null && profile.weight_initial > 0) || (profile?.weight_current != null && profile.weight_current > 0);
+  const pesoIni = weightRecords.length > 0 ? weightRecords[0].weight : (profile?.weight_initial ?? profile?.weight_current ?? null);
+  const pesoCur = weightRecords.length > 0 ? weightRecords[weightRecords.length - 1].weight : (profile?.weight_current ?? profile?.weight_initial ?? null);
+  const variacao = pesoIni != null && pesoCur != null ? pesoCur - pesoIni : null;
+  const chartLabels = weightRecords.map((_, i) => `S${i + 1}`);
+  const chartValues = weightRecords.map((r) => r.weight);
+  const hasChartData = chartValues.length >= 2;
+
+  // Insight alimentar
+  const topContextoKey = monthlyMetrics
+    ? Object.entries(monthlyMetrics.contextos || {})
+        .sort((a, b) => (b[1] as number) - (a[1] as number))[0]?.[0]
+    : undefined;
+  const insightText =
+    !monthlyMetrics || monthlyMetrics.totalCheckins === 0
+      ? 'Continue fazendo check-ins para ver seus padrões aqui.'
+      : monthlyMetrics.desafiosAlimentares === 0
+      ? 'Nenhum desafio alimentar esse mês! Continue assim 🎉'
+      : topContextoKey
+      ? `Seus momentos de desafio alimentar mais frequentes foram em ${CONTEXTOS_MAP[topContextoKey] ?? topContextoKey} 🌱`
+      : 'Continue fazendo check-ins para ver seus padrões aqui.';
 
   const entrance0 = useFadeSlideIn(0);
   const entrance1 = useFadeSlideIn(80);
@@ -151,44 +198,52 @@ export default function ProgressoScreen() {
         {/* Card Evolução do peso */}
         <Animated.View style={[styles.cardPeso, entrance0]}>
           <Text style={styles.cardPesoTitle}>Evolução do peso</Text>
-          {hasAnyCheckin ? (
+          {hasWeightData ? (
             <>
-              <LineChart
-                data={{
-                  labels: CHART_LABELS,
-                  datasets: [{ data: MOCK_WEIGHT_DATA }],
-                }}
-                width={chartWidth}
-                height={180}
-                chartConfig={chartConfig}
-                bezier
-                style={styles.chart}
-                withInnerLines={false}
-                withOuterLines={false}
-                withVerticalLines={false}
-                withHorizontalLines={false}
-                withVerticalLabels={true}
-                withHorizontalLabels={false}
-                fromZero={false}
-                yAxisSuffix=" kg"
-              />
-              <View style={styles.pesoRow}>
-                <Text style={styles.pesoLabel}>Peso inicial: {pesoIni.toFixed(pesoIni % 1 === 0 ? 0 : 1)} kg</Text>
-                <Text style={styles.pesoLabel}>Peso atual: {pesoCur.toFixed(1)} kg</Text>
-              </View>
-              <Text
-                style={[
-                  styles.variacao,
-                  variacao <= 0 ? styles.variacaoNegativa : styles.variacaoPositiva,
-                ]}
-              >
-                {variacao <= 0
-                  ? `▼ ${Math.abs(variacao).toFixed(1)} kg desde o início 🎉`
-                  : `▲ ${variacao.toFixed(1)} kg desde o início`}
-              </Text>
+              {hasChartData && (
+                <LineChart
+                  data={{
+                    labels: chartLabels,
+                    datasets: [{ data: chartValues }],
+                  }}
+                  width={chartWidth}
+                  height={180}
+                  chartConfig={chartConfig}
+                  bezier
+                  style={styles.chart}
+                  withInnerLines={false}
+                  withOuterLines={false}
+                  withVerticalLines={false}
+                  withHorizontalLines={false}
+                  withVerticalLabels={true}
+                  withHorizontalLabels={false}
+                  fromZero={false}
+                  yAxisSuffix=" kg"
+                />
+              )}
+              {pesoIni != null && pesoCur != null && (
+                <>
+                  <View style={styles.pesoRow}>
+                    <Text style={styles.pesoLabel}>Peso inicial: {pesoIni.toFixed(pesoIni % 1 === 0 ? 0 : 1)} kg</Text>
+                    <Text style={styles.pesoLabel}>Peso atual: {pesoCur.toFixed(1)} kg</Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.variacao,
+                      variacao != null && variacao <= 0 ? styles.variacaoNegativa : styles.variacaoPositiva,
+                    ]}
+                  >
+                    {variacao != null && variacao <= 0
+                      ? `▼ ${Math.abs(variacao).toFixed(1)} kg desde o início 🎉`
+                      : variacao != null
+                        ? `▲ ${variacao.toFixed(1)} kg desde o início`
+                        : ''}
+                  </Text>
+                </>
+              )}
             </>
           ) : (
-            <ThemedText style={styles.emptyText}>{emptyMessage}</ThemedText>
+            <ThemedText style={styles.emptyText}>{emptyMessagePeso}</ThemedText>
           )}
         </Animated.View>
 
@@ -205,31 +260,38 @@ export default function ProgressoScreen() {
               <View style={styles.calendarGrid}>
                 {calendarGrid.map((row, rowIndex) => (
                   <View key={rowIndex} style={styles.calendarRow}>
-                    {row.map((cell, colIndex) => (
-                      <View key={`${rowIndex}-${colIndex}`} style={styles.calendarDayWrap}>
-                        {cell === null ? (
-                          <View style={[styles.calendarDay, styles.calendarDayEmpty]} />
-                        ) : cell.done && !cell.shield ? (
-                          <View style={[styles.calendarDay, styles.calendarDayDone]}>
-                            <Text style={styles.calendarDayNumFilled}>{cell.dayOfMonth}</Text>
-                          </View>
-                        ) : cell.shield ? (
-                          <View style={[styles.calendarDay, styles.calendarDayShield]}>
-                            <Text style={styles.calendarDayNumFilled}>{cell.dayOfMonth}</Text>
-                          </View>
-                        ) : (
-                          <View style={[styles.calendarDay, styles.calendarDayEmpty]}>
-                            <Text style={styles.calendarDayNum}>{cell.dayOfMonth}</Text>
-                          </View>
-                        )}
-                      </View>
-                    ))}
+                    {row.map((cell, colIndex) => {
+                      const isToday = cell !== null && cell.dateStr === todayStr;
+                      return (
+                        <View key={`${rowIndex}-${colIndex}`} style={styles.calendarDayWrap}>
+                          {cell === null ? (
+                            <View style={[styles.calendarDay, styles.calendarDayEmpty]} />
+                          ) : cell.done ? (
+                            <View style={[styles.calendarDay, styles.calendarDayDone]}>
+                              <Text style={styles.calendarDayNumFilled}>{cell.dayOfMonth}</Text>
+                            </View>
+                          ) : cell.shield ? (
+                            <View style={[styles.calendarDay, styles.calendarDayShield]}>
+                              <Text style={styles.calendarDayNumFilled}>{cell.dayOfMonth}</Text>
+                            </View>
+                          ) : isToday ? (
+                            <View style={[styles.calendarDay, styles.calendarDayToday]}>
+                              <Text style={styles.calendarDayNum}>{cell.dayOfMonth}</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.calendarDay, styles.calendarDayEmpty]}>
+                              <Text style={styles.calendarDayNum}>{cell.dayOfMonth}</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
                   </View>
                 ))}
               </View>
               <View style={styles.calendarSummaryRow}>
                 <ThemedText style={styles.calendarSummaryLeft}>
-                  {checkinsNoMes.length} check-ins esse mês
+                  {checkins.length} check-ins esse mês
                 </ThemedText>
                 <ThemedText style={styles.calendarSummaryRight}>
                   Melhor sequência: {bestStreakMonth} dias
@@ -237,50 +299,44 @@ export default function ProgressoScreen() {
               </View>
             </>
           ) : (
-            <ThemedText style={styles.emptyText}>{emptyMessage}</ThemedText>
+            <ThemedText style={styles.emptyText}>{emptyMessageCheckins}</ThemedText>
           )}
         </Animated.View>
 
         {/* Bloco 3 — Seus hábitos esse mês */}
         <Animated.View style={[styles.card, entrance2]}>
           <ThemedText style={styles.cardTitle}>Seus hábitos esse mês</ThemedText>
-          {hasAnyCheckin ? (
+          {monthlyMetrics && monthlyMetrics.totalCheckins > 0 ? (
             <>
               <View style={styles.habitsGrid}>
                 <View style={styles.habitCard}>
                   <Ionicons name="barbell-outline" size={28} color={colors.sage} style={styles.habitIcon} />
-                  <ThemedText style={styles.habitNumber}>{metrics.treinos}</ThemedText>
+                  <ThemedText style={styles.habitNumber}>{monthlyMetrics.treinos}</ThemedText>
                   <ThemedText style={styles.habitLabel}>treinos</ThemedText>
                 </View>
                 <View style={styles.habitCard}>
                   <Ionicons name="water-outline" size={28} color={colors.sage} style={styles.habitIcon} />
-                  <ThemedText style={styles.habitNumber}>{metrics.agua}</ThemedText>
+                  <ThemedText style={styles.habitNumber}>{monthlyMetrics.agua}</ThemedText>
                   <ThemedText style={styles.habitLabel}>dias com água</ThemedText>
                 </View>
                 <View style={styles.habitCard}>
                   <Ionicons name="moon-outline" size={28} color={colors.sage} style={styles.habitIcon} />
-                  <ThemedText style={styles.habitNumber}>{metrics.dormiuBem}</ThemedText>
+                  <ThemedText style={styles.habitNumber}>{monthlyMetrics.sono}</ThemedText>
                   <ThemedText style={styles.habitLabel}>noites bem dormidas</ThemedText>
                 </View>
                 <View style={styles.habitCard}>
                   <Ionicons name="restaurant-outline" size={28} color={colors.sage} style={styles.habitIcon} />
-                  <ThemedText style={styles.habitNumber}>{metrics.alimentacao}</ThemedText>
+                  <ThemedText style={styles.habitNumber}>{monthlyMetrics.alimentacao}</ThemedText>
                   <ThemedText style={styles.habitLabel}>dias na alimentação</ThemedText>
                 </View>
               </View>
               <View style={styles.insightBox}>
                 <Ionicons name="bulb-outline" size={24} color={colors.sageDark} style={styles.insightIcon} />
-                <ThemedText style={styles.insightText}>
-                  {contextosFreq.length >= 2
-                    ? `Seus momentos de desafio alimentar mais frequentes foram em ${contextosFreq[0]} e ${contextosFreq[1]}.`
-                    : contextosFreq.length === 1
-                      ? `Seus momentos de desafio alimentar mais frequentes foram em ${contextosFreq[0]}.`
-                      : 'Continue fazendo check-ins para ver seus padrões aqui.'}
-                </ThemedText>
+                <ThemedText style={styles.insightText}>{insightText}</ThemedText>
               </View>
             </>
           ) : (
-            <ThemedText style={styles.emptyText}>{emptyMessage}</ThemedText>
+            <ThemedText style={styles.emptyText}>{emptyMessageCheckins}</ThemedText>
           )}
         </Animated.View>
       </ScrollView>
@@ -424,6 +480,12 @@ const styles = StyleSheet.create({
   },
   calendarDayShield: {
     backgroundColor: colors.terracottaLight,
+  },
+  calendarDayToday: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: '#5C7A5C',
+    borderStyle: 'dashed',
   },
   calendarDayEmpty: {
     backgroundColor: '#F0F0F0',

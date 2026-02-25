@@ -19,29 +19,38 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/Themed';
 import { colors, gradients, shadows, radius, spacing, typography } from '@/constants/theme';
 import { useFadeSlideIn, usePressScale } from '@/hooks/useEntrance';
+import type { CheckinData } from '@/utils/storage';
 import {
-  getOnboardingData,
-  OnboardingData,
-  getCheckinByDate,
-  getStreak,
-  getLast7DaysCheckins,
-  getLast7DaysCheckinsFull,
-  CheckinData,
-} from '@/utils/storage';
+  getProfile,
+  getTodayCheckin as getTodayCheckinDb,
+  getLastSevenDaysCheckins as getLastSevenDaysCheckinsDb,
+  getCheckinsByMonth,
+  getWeightRecords,
+  getWeeklyMetrics,
+  calculateStreak,
+  localDateStr,
+  type Profile,
+  type WeeklyMetrics,
+} from '@/lib/database';
 
 const MARCO_90 = 90;
 
 export default function InicioScreen() {
-  const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [streak, setStreak] = useState(0);
   const [todayCheckin, setTodayCheckin] = useState<CheckinData | null>(null);
   const [last7, setLast7] = useState<{ date: string; label: string; done: boolean }[]>([]);
-  const [last7Full, setLast7Full] = useState<CheckinData[]>([]);
+  const [checkinsMonth, setCheckinsMonth] = useState<CheckinData[]>([]);
+  const [weightRecords, setWeightRecords] = useState<{ date: string; weight: number }[]>([]);
+  const [weeklyMetrics, setWeeklyMetrics] = useState<WeeklyMetrics>({ treinos: 0, agua: 0, sono: 0, alimentacao: 0, desafiosAlimentares: 0, totalCheckins: 0 });
   const [modalResumoVisible, setModalResumoVisible] = useState(false);
   const [modalConteudoVisible, setModalConteudoVisible] = useState(false);
   const [modalSequenciaVisible, setModalSequenciaVisible] = useState(false);
   const router = useRouter();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
 
   const entrance0 = useFadeSlideIn(0);
   const entrance1 = useFadeSlideIn(80);
@@ -58,19 +67,30 @@ export default function InicioScreen() {
   const pressCheckinSequenciaModal = usePressScale();
 
   const loadData = async () => {
-    const [onb, str, week, weekFull] = await Promise.all([
-      getOnboardingData(),
-      getStreak(),
-      getLast7DaysCheckins(),
-      getLast7DaysCheckinsFull(),
-    ]);
-    setOnboardingData(onb ?? null);
-    setStreak(str);
-    setLast7(week);
-    setLast7Full(weekFull);
-    const today = new Date().toISOString().slice(0, 10);
-    const todayC = await getCheckinByDate(today);
-    setTodayCheckin(todayC ?? null);
+    const p = await getProfile();
+    setProfile(p ?? null);
+    if (p) {
+      const [str, week, todayC, records, monthCheckins, wMetrics] = await Promise.all([
+        calculateStreak(),
+        getLastSevenDaysCheckinsDb(),
+        getTodayCheckinDb(),
+        getWeightRecords(),
+        getCheckinsByMonth(currentYear, currentMonth),
+        getWeeklyMetrics(),
+      ]);
+      setStreak(str);
+      setLast7(week);
+      setTodayCheckin(todayC ?? null);
+      setWeightRecords(records.map((r) => ({ date: r.date, weight: r.weight })));
+      setCheckinsMonth(monthCheckins);
+      if (wMetrics) setWeeklyMetrics(wMetrics);
+    } else {
+      setStreak(0);
+      setLast7([]);
+      setTodayCheckin(null);
+      setWeightRecords([]);
+      setCheckinsMonth([]);
+    }
     setLoading(false);
   };
 
@@ -91,16 +111,19 @@ export default function InicioScreen() {
     return 'Boa noite';
   };
 
-  const dayXOf90 = () => {
-    if (!onboardingData?.onboardingDate) return 1;
-    const start = new Date(onboardingData.onboardingDate);
+  const dayXOf90 = (): number | null => {
+    if (!profile?.program_start_date) return null;
+    const start = new Date(profile.program_start_date);
     const today = new Date();
     const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
     return Math.min(MARCO_90, Math.max(1, diff + 1));
   };
 
+  const hasProgramStart = !!profile?.program_start_date;
+
   const proximoMarco = () => {
     const x = dayXOf90();
+    if (x == null) return null;
     if (x < 7) return 7;
     if (x < 30) return 30;
     if (x < 60) return 60;
@@ -115,16 +138,25 @@ export default function InicioScreen() {
   };
 
   const weekComplete = last7.filter((d) => d.done).length;
-  const treinosWeek = last7Full.filter((c) => c.treinou).length;
-  const aguaWeek = last7Full.filter((c) => c.bebeuAgua).length;
-  const sonoWeek = last7Full.filter((c) => c.dormiuBem).length;
-  const alimentacaoWeek = last7Full.filter((c) => c.adesaoAlimentar === 'sim').length;
-  const diasDesafioAlimentar = last7Full.filter(
-    (c) => c.adesaoAlimentar === 'mais_ou_menos' || c.adesaoAlimentar === 'nao'
-  ).length;
-  const proximaPesagemDias = 7;
-  const proximaAplicacaoDias = onboardingData?.glp1Status === 'using' ? 7 : null;
-  const usaGlp1 = onboardingData?.glp1Status === 'using';
+  const lastWeightRecord = weightRecords.length > 0 ? weightRecords[weightRecords.length - 1] : null;
+  const nextWeighInDate = lastWeightRecord
+    ? (() => {
+        const d = new Date(lastWeightRecord.date);
+        d.setDate(d.getDate() + 7);
+        return d;
+      })()
+    : null;
+  const proximaPesagemDias =
+    nextWeighInDate != null
+      ? Math.max(0, Math.ceil((nextWeighInDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))
+      : null;
+  const usaGlp1 = profile?.glp1_status === 'using';
+  const proximaAplicacaoDias = usaGlp1 ? 7 : null;
+
+  const userName = profile?.name?.trim() || 'Bem-vinda';
+  const dayX = dayXOf90();
+  const progressPct = dayX != null ? (dayX / MARCO_90) * 100 : 0;
+  const marco = proximoMarco();
 
   if (loading) {
     return (
@@ -134,9 +166,16 @@ export default function InicioScreen() {
     );
   }
 
-  const userName = onboardingData?.name || 'Bem-vinda';
-  const dayX = dayXOf90();
-  const progressPct = (dayX / MARCO_90) * 100;
+  if (profile === null) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.emptyStateTitle}>Complete seu perfil para ver seu progresso</Text>
+          <Text style={styles.emptyStateSub}>Faça login e complete o onboarding para acessar sua jornada.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -147,16 +186,24 @@ export default function InicioScreen() {
         {/* Header com gradiente */}
         <LinearGradient colors={gradients.gradientHeader} style={styles.header}>
           <Text style={styles.greeting}>{greeting()}, {userName}</Text>
-          <RNText style={styles.dayLabel}>Dia {dayX} de {MARCO_90}</RNText>
-          <View style={styles.progressBarBg}>
-            <LinearGradient
-              colors={gradients.gradientSage}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={[styles.progressBarFill, { width: `${progressPct}%` }]}
-            />
-          </View>
-          <RNText style={styles.marcoText}>Próximo marco: {proximoMarco()} dias</RNText>
+          {hasProgramStart && dayX != null ? (
+            <>
+              <RNText style={styles.dayLabel}>Dia {dayX} de {MARCO_90}</RNText>
+              <View style={styles.progressBarBg}>
+                <LinearGradient
+                  colors={gradients.gradientSage}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.progressBarFill, { width: `${progressPct}%` }]}
+                />
+              </View>
+              <RNText style={styles.marcoText}>
+                Próximo marco: {marco != null ? `${marco} dias` : '—'}
+              </RNText>
+            </>
+          ) : (
+            <RNText style={styles.dayLabel}>Configure sua data de início no perfil</RNText>
+          )}
         </LinearGradient>
 
         {/* Card Sequência */}
@@ -222,22 +269,30 @@ export default function InicioScreen() {
         </Animated.View>
 
         {/* Card Progresso Semanal */}
-        <Animated.View style={[styles.card, entrance2]}>
-          <Text style={styles.cardTitle}>Sua semana</Text>
+        <Animated.View style={[styles.weekCard, entrance2]}>
+          <RNText style={styles.weekCardTitle}>Sua semana</RNText>
           <View style={styles.weekCircles}>
-            {last7.map((d) => (
-              <View key={d.date} style={styles.weekCircleWrap}>
-                {d.done ? (
-                  <LinearGradient
-                    colors={gradients.gradientSage}
-                    style={[styles.weekCircle, styles.weekCircleFilled, shadows.glowSage]}
-                  />
-                ) : (
-                  <View style={styles.weekCircleEmpty} />
-                )}
-                <RNText style={styles.weekCircleLabel}>{d.label}</RNText>
-              </View>
-            ))}
+            {last7.map((d) => {
+              const todayStr = localDateStr(now);
+              const isToday = d.date === todayStr;
+              const isFuture = d.date > todayStr;
+              return (
+                <View key={d.date} style={styles.weekCircleWrap}>
+                  <RNText style={styles.weekDayLabel}>{d.label}</RNText>
+                  {d.done ? (
+                    <View style={styles.weekCircleDone}>
+                      <Ionicons name="checkmark" size={16} color="#fff" />
+                    </View>
+                  ) : isToday ? (
+                    <View style={styles.weekCircleToday} />
+                  ) : isFuture ? (
+                    <View style={styles.weekCircleFuture} />
+                  ) : (
+                    <View style={styles.weekCirclePast} />
+                  )}
+                </View>
+              );
+            })}
           </View>
           <RNText style={styles.weekSummary}>{weekComplete} de 7 dias completos esta semana.</RNText>
         </Animated.View>
@@ -248,24 +303,36 @@ export default function InicioScreen() {
           <View style={styles.comoIndoGrid}>
             <View style={styles.comoIndoCard}>
               <Ionicons name="barbell-outline" size={28} color={colors.sageDark} style={styles.comoIndoIcon} />
-              <RNText style={styles.comoIndoNum}>{treinosWeek}</RNText>
+              <RNText style={styles.comoIndoNum}>{weeklyMetrics.treinos}</RNText>
               <RNText style={styles.comoIndoLabel}>treinos</RNText>
             </View>
             <View style={styles.comoIndoCard}>
               <Ionicons name="water-outline" size={28} color={colors.sageDark} style={styles.comoIndoIcon} />
-              <RNText style={styles.comoIndoNum}>{aguaWeek}</RNText>
+              <RNText style={styles.comoIndoNum}>{weeklyMetrics.agua}</RNText>
               <RNText style={styles.comoIndoLabel}>dias com água</RNText>
             </View>
             <View style={styles.comoIndoCard}>
               <Ionicons name="moon-outline" size={28} color={colors.sageDark} style={styles.comoIndoIcon} />
-              <RNText style={styles.comoIndoNum}>{sonoWeek}</RNText>
+              <RNText style={styles.comoIndoNum}>{weeklyMetrics.sono}</RNText>
               <RNText style={styles.comoIndoLabel}>noites bem dormidas</RNText>
             </View>
             <View style={styles.comoIndoCard}>
               <Ionicons name="restaurant-outline" size={28} color={colors.sageDark} style={styles.comoIndoIcon} />
-              <RNText style={styles.comoIndoNum}>{alimentacaoWeek}</RNText>
+              <RNText style={styles.comoIndoNum}>{weeklyMetrics.alimentacao}</RNText>
               <RNText style={styles.comoIndoLabel}>dias na alimentação</RNText>
             </View>
+          </View>
+          <View style={styles.comoIndoInsight}>
+            <Ionicons name="bulb-outline" size={16} color={colors.sageDark} style={{ marginRight: 8 }} />
+            <RNText style={styles.comoIndoInsightText}>
+              {weeklyMetrics.totalCheckins === 0
+                ? 'Faça seu primeiro check-in para ver suas métricas aqui 🌱'
+                : weeklyMetrics.desafiosAlimentares === 0
+                ? 'Semana perfeita na alimentação! 🎉'
+                : weeklyMetrics.desafiosAlimentares === 1
+                ? '1 dia com desafio alimentar essa semana. Totalmente normal 💚'
+                : `${weeklyMetrics.desafiosAlimentares} dias com desafios essa semana — entender o contexto ajuda a melhorar 🌱`}
+            </RNText>
           </View>
         </Animated.View>
 
@@ -276,7 +343,11 @@ export default function InicioScreen() {
             <RNText style={styles.eventIcon}>⚖️</RNText>
             <View>
               <RNText style={styles.eventTitle}>Próxima pesagem</RNText>
-              <RNText style={styles.eventSub}>em {proximaPesagemDias} dias</RNText>
+              {proximaPesagemDias != null ? (
+                <RNText style={styles.eventSub}>em {proximaPesagemDias} dias</RNText>
+              ) : (
+                <RNText style={styles.eventSub}>Registre seu peso para ver quando é a próxima pesagem</RNText>
+              )}
             </View>
           </View>
           {usaGlp1 && (
@@ -284,7 +355,9 @@ export default function InicioScreen() {
               <RNText style={styles.eventIcon}>💉</RNText>
               <View>
                 <RNText style={styles.eventTitle}>Próxima aplicação GLP-1</RNText>
-                <RNText style={styles.eventSub}>em {proximaAplicacaoDias} dias</RNText>
+                <RNText style={styles.eventSub}>
+                  {proximaAplicacaoDias != null ? `em ${proximaAplicacaoDias} dias` : 'Registre na aba GLP-1'}
+                </RNText>
               </View>
             </View>
           )}
@@ -316,26 +389,51 @@ export default function InicioScreen() {
       {/* Modal Resumo do check-in */}
       <Modal visible={modalResumoVisible} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setModalResumoVisible(false)}>
-          <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Seu dia</Text>
-            {todayCheckin && (
-              <>
-                <Text style={styles.modalLine}>Treinou: {todayCheckin.treinou ? 'Sim' : 'Não'}</Text>
-                <Text style={styles.modalLine}>Água: {todayCheckin.bebeuAgua ? 'Sim' : 'Não'}</Text>
-                <Text style={styles.modalLine}>Dormiu bem: {todayCheckin.dormiuBem ? 'Sim' : 'Não'}</Text>
-                <Text style={styles.modalLine}>Alimentação: {todayCheckin.adesaoAlimentar}</Text>
-                <Text style={styles.modalLine}>Humor: {todayCheckin.humor}</Text>
-                {todayCheckin.textoLivre ? (
-                  <Text style={styles.modalLine}>Observação: {todayCheckin.textoLivre}</Text>
-                ) : null}
-              </>
-            )}
+          <Pressable style={styles.modalResumoBox} onPress={(e) => e.stopPropagation()}>
+            <RNText style={styles.modalResumoTitle}>Resumo do seu dia</RNText>
+            {todayCheckin && (() => {
+              const alimentacaoLabel =
+                todayCheckin.adesaoAlimentar === 'sim'
+                  ? { text: '✅ Sim', color: '#1A1A1A' }
+                  : todayCheckin.adesaoAlimentar === 'mais_ou_menos'
+                  ? { text: 'Mais ou menos', color: '#C4846A' }
+                  : { text: '❌ Não', color: '#1A1A1A' };
+              const humorLabel =
+                todayCheckin.humor === 'bem'
+                  ? '😊 Bem'
+                  : todayCheckin.humor === 'normal'
+                  ? '😐 Normal'
+                  : '😔 Cansada';
+              const rows: { label: string; value: string; valueColor?: string }[] = [
+                { label: 'Treinou', value: todayCheckin.treinou ? '✅ Sim' : '❌ Não' },
+                { label: 'Bebeu água', value: todayCheckin.bebeuAgua ? '✅ Sim' : '❌ Não' },
+                { label: 'Dormiu bem', value: todayCheckin.dormiuBem ? '✅ Sim' : '❌ Não' },
+                { label: 'Alimentação', value: alimentacaoLabel.text, valueColor: alimentacaoLabel.color },
+                { label: 'Humor', value: humorLabel },
+              ];
+              return rows.map((row, idx) => (
+                <View key={row.label}>
+                  <View style={styles.modalResumoRow}>
+                    <RNText style={styles.modalResumoLabel}>{row.label}</RNText>
+                    <RNText style={[styles.modalResumoValue, row.valueColor ? { color: row.valueColor } : null]}>
+                      {row.value}
+                    </RNText>
+                  </View>
+                  {idx < rows.length - 1 && <View style={styles.modalResumoDivider} />}
+                </View>
+              ));
+            })()}
             <TouchableOpacity
-              style={styles.modalBtn}
               onPress={() => setModalResumoVisible(false)}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
+              style={styles.modalResumoBtn}
             >
-              <Text style={styles.modalBtnText}>Fechar</Text>
+              <LinearGradient
+                colors={gradients.gradientSage}
+                style={styles.modalResumoBtnInner}
+              >
+                <RNText style={styles.modalResumoBtnText}>Fechar</RNText>
+              </LinearGradient>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -454,6 +552,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
+  },
+  emptyStateTitle: {
+    ...typography.titleSmall,
+    color: colors.text,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  emptyStateSub: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   content: {
     padding: spacing.lg,
@@ -584,36 +693,70 @@ const styles = StyleSheet.create({
     ...typography.titleSmall,
     marginBottom: spacing.md,
   },
+  weekCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E8EDE8',
+    ...shadows.card,
+  },
+  weekCardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 16,
+  },
   weekCircles: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
   },
   weekCircleWrap: {
     alignItems: 'center',
+    gap: 6,
   },
-  weekCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginBottom: spacing.xs,
+  weekDayLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B6B6B',
   },
-  weekCircleFilled: {},
-  weekCircleEmpty: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  weekCircleDone: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#5C7A5C',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekCircleToday: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#5C7A5C',
+  },
+  weekCirclePast: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: colors.borderMuted,
-    marginBottom: spacing.xs,
+    borderColor: '#C8DEC8',
+    backgroundColor: '#F5F8F5',
   },
-  weekCircleLabel: {
-    ...typography.caption,
-    color: colors.textSecondary,
+  weekCircleFuture: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E8EDE8',
+    backgroundColor: '#FAFAF8',
   },
   weekSummary: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
+    fontSize: 14,
+    color: '#6B6B6B',
+    marginTop: 14,
   },
   comoIndoWrap: {
     marginBottom: spacing.md,
@@ -644,6 +787,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '400',
     color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  comoIndoInsight: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#EBF3EB',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  comoIndoInsightText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#5C7A5C',
     lineHeight: 20,
   },
   cardEventos: {
@@ -731,6 +888,56 @@ const styles = StyleSheet.create({
   modalBtnText: {
     ...typography.label,
     color: colors.white,
+  },
+  // Modal Resumo do check-in (novo design)
+  modalResumoBox: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 20,
+    marginHorizontal: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalResumoTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  modalResumoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  modalResumoDivider: {
+    height: 1,
+    backgroundColor: '#E8EDE8',
+  },
+  modalResumoLabel: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: '#6B6B6B',
+  },
+  modalResumoValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  modalResumoBtn: {
+    marginTop: 20,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  modalResumoBtnInner: {
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalResumoBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
   // Modal Sua Sequência
   modalSequenciaRoot: {
