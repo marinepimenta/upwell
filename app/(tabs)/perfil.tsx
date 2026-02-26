@@ -23,6 +23,7 @@ import {
   calculateStreak,
   type Profile,
 } from '@/lib/database';
+import { formatDateBRT } from '@/lib/utils';
 import { usePressScale } from '@/hooks/useEntrance';
 
 function getGreeting(): string {
@@ -32,14 +33,6 @@ function getGreeting(): string {
   return 'Boa noite';
 }
 
-function formatDate(isoDate: string): string {
-  try {
-    const d = new Date(isoDate + 'T12:00:00');
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-  } catch {
-    return isoDate;
-  }
-}
 
 function glp1Label(status: Profile['glp1_status']): string {
   if (status === 'using') return 'Uso atualmente';
@@ -238,7 +231,7 @@ export default function PerfilScreen() {
           <View style={styles.programRow}>
             <RNText style={styles.programLabel}>Início</RNText>
             <RNText style={styles.programValue}>
-              {profile.program_start_date ? formatDate(profile.program_start_date) : '—'}
+              {profile.program_start_date ? formatDateBRT(profile.program_start_date) : '—'}
             </RNText>
           </View>
           <View style={styles.programDivider} />
@@ -270,6 +263,20 @@ export default function PerfilScreen() {
             ))}
           </View>
         </View>
+
+        {/* Relatório para consulta */}
+        <TouchableOpacity
+          onPress={() => router.push('/relatorio')}
+          style={styles.reportCard}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="document-text-outline" size={20} color="#5C7A5C" />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <RNText style={styles.reportCardTitle}>Relatório para consulta</RNText>
+            <RNText style={styles.reportCardSubtitle}>Leve seu histórico para a médica</RNText>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#8FAF8F" />
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -481,6 +488,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B6B6B',
     textAlign: 'center',
+  },
+  reportCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: '#5C7A5C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  reportCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+  reportCardSubtitle: {
+    fontSize: 13,
+    color: '#6B6B6B',
+    marginTop: 2,
   },
   // Modal
   modalOverlay: {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -10,50 +10,33 @@ import {
   TextInput,
   Share,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  interpolateColor,
-} from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text as ThemedText } from '@/components/Themed';
 import { colors, gradients, shadows, radius, spacing, typography } from '@/constants/theme';
 import { useFadeSlideIn, usePressScale } from '@/hooks/useEntrance';
 import {
-  getOnboardingData,
-  getGlp1Applications as getGlp1ApplicationsStorage,
-  getNextGlp1ApplicationDate as getNextGlp1ApplicationDateStorage,
-  saveGlp1Application as saveGlp1ApplicationStorage,
-  getGlp1SymptomsRecords as getGlp1SymptomsRecordsStorage,
-  saveGlp1SymptomsRecord as saveGlp1SymptomsRecordStorage,
   type Glp1Application,
   type Glp1SymptomsRecord,
 } from '@/utils/storage';
 import {
-  getGlp1Applications as getGlp1ApplicationsDb,
-  getNextGlp1ApplicationDate as getNextGlp1ApplicationDateDb,
-  saveGlp1Application as saveGlp1ApplicationDb,
-  getGlp1Symptoms as getGlp1SymptomsDb,
-  saveGlp1Symptoms as saveGlp1SymptomsDb,
+  getGlp1Applications,
+  getNextGlp1ApplicationDate,
+  saveGlp1Application,
+  updateGlp1Application,
+  getGlp1Symptoms,
 } from '@/lib/database';
+import { getTodayBRT, formatDateBRT, formatDateFullBRT } from '@/lib/utils';
 
 const MEDICATIONS = ['Ozempic', 'Mounjaro', 'Wegovy', 'Outro'];
 const DOSES = ['0.25mg', '0.5mg', '1mg', '2mg', 'Outro'];
-const SYMPTOMS = [
-  'Náusea 🤢',
-  'Falta de apetite',
-  'Cansaço 😴',
-  'Constipação',
-  'Refluxo',
-  'Tontura',
-  'Bem! Sem sintomas ✨',
-];
-const BEM_SEM_SINTOMAS = 'Bem! Sem sintomas ✨';
 
 const EDUCATIVO_ITEMS = [
   {
@@ -89,47 +72,6 @@ const shadowMd = {
   elevation: 4,
 };
 
-function SymptomChip({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const press = usePressScale();
-  const selectedVal = useSharedValue(selected ? 1 : 0);
-
-  useEffect(() => {
-    selectedVal.value = withTiming(selected ? 1 : 0, { duration: 200 });
-  }, [selected, selectedVal]);
-
-  const animatedBg = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(selectedVal.value, [0, 1], ['#EBF3EB', '#C8DEC8']),
-    borderWidth: selectedVal.value > 0.5 ? 1 : 0,
-    borderColor: '#8FAF8F',
-  }));
-
-  return (
-    <Animated.View style={press.animatedStyle}>
-      <TouchableOpacity
-        onPressIn={press.onPressIn}
-        onPressOut={press.onPressOut}
-        onPress={onPress}
-        activeOpacity={1}
-        style={styles.sintomaChipTouch}
-      >
-        <Animated.View style={[styles.sintomaChipInner, animatedBg]}>
-          <RNText style={[styles.sintomaChipText, selected && styles.sintomaChipTextSelected]}>
-            {label}
-          </RNText>
-        </Animated.View>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
-
 function EducativoRow({
   item,
   onPress,
@@ -158,22 +100,9 @@ function EducativoRow({
   );
 }
 
-function formatDatePtBr(dateStr: string): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('pt-BR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
 function formatNextApplicationDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T12:00:00');
-  const weekday = d.toLocaleDateString('pt-BR', { weekday: 'long' });
-  const day = d.getDate().toString().padStart(2, '0');
-  const month = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-  const year = d.getFullYear();
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-  return `${cap(weekday)}, ${day} ${cap(month)} ${year}`;
+  return cap(formatDateFullBRT(dateStr));
 }
 
 export default function Glp1CompanionScreen() {
@@ -183,17 +112,22 @@ export default function Glp1CompanionScreen() {
   const [loading, setLoading] = useState(true);
 
   const [modalAplicacaoVisible, setModalAplicacaoVisible] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [medication, setMedication] = useState<string | null>(null);
   const [dose, setDose] = useState<string | null>(null);
   const [observation, setObservation] = useState('');
 
-  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
+  const [savingApplication, setSavingApplication] = useState(false);
+  const [applicationError, setApplicationError] = useState<string | null>(null);
 
   const [modalEducativoVisible, setModalEducativoVisible] = useState(false);
   const [educativoSelected, setEducativoSelected] = useState<(typeof EDUCATIVO_ITEMS)[0] | null>(null);
 
   const [modalRelatorioVisible, setModalRelatorioVisible] = useState(false);
   const [relatorioText, setRelatorioText] = useState('');
+
+  const aplicacaoScrollRef = useRef<ScrollView>(null);
 
   const entrance0 = useFadeSlideIn(0);
   const entrance1 = useFadeSlideIn(80);
@@ -203,29 +137,18 @@ export default function Glp1CompanionScreen() {
   const entrance5 = useFadeSlideIn(400);
   const entrance6 = useFadeSlideIn(480);
   const pressRegistrar = usePressScale();
-  const pressSalvarSintomas = usePressScale();
   const pressGerarRelatorio = usePressScale();
 
   const load = async () => {
-    const [appsDb, nextDb, symptomsDb] = await Promise.all([
-      getGlp1ApplicationsDb(),
-      getNextGlp1ApplicationDateDb(),
-      getGlp1SymptomsDb(),
+    setLoading(true);
+    const [apps, next, syms] = await Promise.all([
+      getGlp1Applications(),
+      getNextGlp1ApplicationDate(),
+      getGlp1Symptoms(),
     ]);
-    if (appsDb.length > 0 || symptomsDb.length > 0) {
-      setApplications(appsDb.sort((a, b) => b.date.localeCompare(a.date)));
-      setNextDate(nextDb);
-      setSymptomsRecords(symptomsDb.sort((a, b) => b.date.localeCompare(a.date)));
-    } else {
-      const [apps, next, symptoms] = await Promise.all([
-        getGlp1ApplicationsStorage(),
-        getNextGlp1ApplicationDateStorage(),
-        getGlp1SymptomsRecordsStorage(),
-      ]);
-      setApplications(apps.sort((a, b) => b.date.localeCompare(a.date)));
-      setNextDate(next);
-      setSymptomsRecords(symptoms.sort((a, b) => b.date.localeCompare(a.date)));
-    }
+    setApplications((apps || []).sort((a, b) => b.date.localeCompare(a.date)));
+    setNextDate(next);
+    setSymptomsRecords((syms || []).sort((a, b) => b.date.localeCompare(a.date)));
     setLoading(false);
   };
 
@@ -239,88 +162,122 @@ export default function Glp1CompanionScreen() {
     }, [])
   );
 
-  const handleConfirmarAplicacao = async () => {
-    if (!medication || !dose) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const payload: Glp1Application = {
-      date: today,
-      medication,
-      dose,
-      observation: observation.trim() || undefined,
-    };
-    await saveGlp1ApplicationDb(payload);
-    await saveGlp1ApplicationStorage(payload);
-    setModalAplicacaoVisible(false);
+  const resetModal = () => {
     setMedication(null);
     setDose(null);
     setObservation('');
-    load();
+    setEditingId(null);
+    setModalAplicacaoVisible(false);
+    setShowConfirmModal(false);
+    setApplicationError(null);
   };
 
-  const toggleSymptom = (s: string) => {
-    if (s === BEM_SEM_SINTOMAS) {
-      setSelectedSymptoms([BEM_SEM_SINTOMAS]);
+  const doSaveApplication = async () => {
+    if (!medication || !dose) return;
+    setSavingApplication(true);
+    setApplicationError(null);
+    const today = getTodayBRT();
+    if (editingId) {
+      const { error } = await updateGlp1Application(editingId, {
+        medication,
+        dose,
+        observation: observation.trim() || null,
+      });
+      if (error) {
+        setApplicationError('Erro ao salvar. Tente novamente.');
+        setSavingApplication(false);
+        return;
+      }
+    } else {
+      const { error } = await saveGlp1Application({
+        date: today,
+        medication,
+        dose,
+        observation: observation.trim() || undefined,
+      });
+      if (error) {
+        setApplicationError('Erro ao salvar. Tente novamente.');
+        setSavingApplication(false);
+        return;
+      }
+    }
+    const apps = await getGlp1Applications();
+    setApplications((apps || []).sort((a, b) => b.date.localeCompare(a.date)));
+    const next = await getNextGlp1ApplicationDate();
+    setNextDate(next);
+    resetModal();
+    setSavingApplication(false);
+  };
+
+  const handleConfirmarAplicacao = async () => {
+    if (!medication || !dose) {
+      setApplicationError('Selecione o medicamento e a dose');
       return;
     }
-    setSelectedSymptoms((prev) => {
-      const withoutBem = prev.filter((x) => x !== BEM_SEM_SINTOMAS);
-      if (withoutBem.includes(s)) return withoutBem.filter((x) => x !== s);
-      return [...withoutBem, s];
-    });
-  };
+    setApplicationError(null);
+    const today = getTodayBRT();
+    const todayApps = applications.filter((a) => a.date === today);
 
-  const handleSalvarSintomas = async () => {
-    await saveGlp1SymptomsDb(selectedSymptoms);
-    await saveGlp1SymptomsRecordStorage({ date: new Date().toISOString().slice(0, 10), symptoms: selectedSymptoms });
-    setSelectedSymptoms([]);
-    load();
-  };
-
-  const handleGerarRelatorio = async () => {
-    const apps = applications.length > 0 ? applications : await getGlp1ApplicationsStorage();
-    const symptoms = symptomsRecords.length > 0 ? symptomsRecords : await getGlp1SymptomsRecordsStorage();
-    const now = new Date();
-    const monthAgo = new Date(now);
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
-    const periodStart = monthAgo.toLocaleDateString('pt-BR');
-    const periodEnd = now.toLocaleDateString('pt-BR');
-
-    const appsInPeriod = apps.filter((a) => a.date >= monthAgo.toISOString().slice(0, 10));
-    const meds = [...new Set(appsInPeriod.map((a) => a.medication))].join(', ');
-    const doses = [...new Set(appsInPeriod.map((a) => a.dose))].join(', ');
-
-    const symptomsInPeriod = symptoms.filter((s) => s.date >= monthAgo.toISOString().slice(0, 10));
-    const symptomCount: Record<string, number> = {};
-    symptomsInPeriod.forEach((r) => {
-      r.symptoms.forEach((s) => {
-        if (s !== 'Bem! Sem sintomas') symptomCount[s] = (symptomCount[s] || 0) + 1;
-      });
-    });
-    const topSymptoms = Object.entries(symptomCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([s, n]) => `${s} (${n}x)`)
-      .join(', ') || 'Nenhum sintoma registrado';
-
-    let text = `Relatório UpWell - GLP-1 Companion\n`;
-    text += `Período: ${periodStart} a ${periodEnd}\n\n`;
-    text += `Medicamentos usados: ${meds || 'Nenhum registro'}\n`;
-    text += `Doses: ${doses || '-'}\n\n`;
-    text += `Sintomas mais frequentes: ${topSymptoms}\n\n`;
-    const withObs = appsInPeriod.filter((a) => a.observation);
-    if (withObs.length > 0) {
-      text += `Observações: ${withObs.map((a) => `${a.date}: ${a.observation}`).join('; ')}\n`;
+    if (editingId) {
+      await doSaveApplication();
+      return;
     }
-    setRelatorioText(text);
-    setModalRelatorioVisible(true);
+
+    const sameMedToday = todayApps.find(
+      (a) => a.medication === medication && a.id !== editingId
+    );
+    if (sameMedToday) {
+      setApplicationError(`Você já registrou ${medication} hoje. Edite o registro existente se precisar corrigir.`);
+      return;
+    }
+
+    if (todayApps.length > 0) {
+      setShowConfirmModal(true);
+      return;
+    }
+
+    await doSaveApplication();
   };
+
+  const generateReport = (): string => {
+    if (applications.length === 0) return 'Nenhuma aplicação registrada.';
+
+    const periodo =
+      `${formatDateBRT(applications[applications.length - 1].date)} a ${formatDateBRT(applications[0].date)}`;
+
+    const medicamentos = [...new Set(applications.map((a) => a.medication))].join(', ');
+
+    const doses = applications
+      .map((a) => `${formatDateBRT(a.date)}: ${a.medication} ${a.dose}`)
+      .join('\n');
+
+    const allSymptoms = symptomsRecords.flatMap((s) => s.symptoms);
+    const symptomCount = allSymptoms.reduce((acc: Record<string, number>, s: string) => {
+      acc[s] = (acc[s] || 0) + 1;
+      return acc;
+    }, {});
+    const topSymptoms =
+      Object.entries(symptomCount)
+        .sort((a, b) => (b[1] as number) - (a[1] as number))
+        .slice(0, 3)
+        .map(([s]) => s)
+        .join(', ') || 'Nenhum sintoma registrado';
+
+    const observacoes =
+      applications
+        .filter((a) => a.observation)
+        .map((a) => `${formatDateBRT(a.date)}: ${a.observation}`)
+        .join('\n') || 'Nenhuma observação';
+
+    return `RELATÓRIO UPWELL\n\nPeríodo: ${periodo}\nMedicamentos: ${medicamentos}\n\nAplicações:\n${doses}\n\nSintomas mais frequentes: ${topSymptoms}\n\nObservações:\n${observacoes}`;
+  };
+
+  const router = useRouter();
+  const handleGerarRelatorio = () => router.push('/relatorio');
 
   const handleCompartilhar = async () => {
     try {
-      await Share.share({
-        message: relatorioText,
-        title: 'Relatório UpWell - GLP-1',
-      });
+      await Share.share({ message: generateReport() });
     } catch (_) {}
   };
 
@@ -392,52 +349,40 @@ export default function Glp1CompanionScreen() {
           </Animated.View>
         </Animated.View>
 
-        {/* Bloco 2 — Sintomas */}
-        <Animated.View style={[styles.cardSintomas, entrance1]}>
-          <ThemedText style={styles.sintomasTitle}>Como você está se sentindo?</ThemedText>
-          <RNText style={styles.sintomasSubtitle}>
-            Registrar sintomas ajuda sua médica a ajustar o tratamento.
-          </RNText>
-          <View style={styles.sintomasChipsRow}>
-            {SYMPTOMS.map((s) => (
-              <SymptomChip
-                key={s}
-                label={s}
-                selected={selectedSymptoms.includes(s)}
-                onPress={() => toggleSymptom(s)}
-              />
-            ))}
-          </View>
-          <Animated.View style={[pressSalvarSintomas.animatedStyle, styles.btnSalvarSintomasWrap]}>
-            <TouchableOpacity
-              onPressIn={pressSalvarSintomas.onPressIn}
-              onPressOut={pressSalvarSintomas.onPressOut}
-              onPress={handleSalvarSintomas}
-              style={styles.btnSalvarSintomas}
-              activeOpacity={1}
-            >
-              <RNText style={styles.btnSalvarSintomasText}>Salvar sintomas de hoje</RNText>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.View>
-
-        {/* Bloco 3 — Histórico aplicações */}
-        <Animated.View style={[styles.card, entrance2]}>
+        {/* Bloco 2 — Histórico aplicações */}
+        <Animated.View style={[styles.card, entrance1]}>
           <ThemedText style={styles.cardTitle}>Suas aplicações</ThemedText>
           {last4Apps.length === 0 ? (
             <RNText style={styles.emptyText}>Registre sua primeira aplicação acima 🌱</RNText>
           ) : (
             <View style={styles.timeline}>
               {last4Apps.map((app, i) => (
-                <View key={app.date + i} style={styles.timelineRow}>
+                <View key={app.id ?? app.date + i} style={styles.timelineRow}>
                   <View style={styles.timelineDot} />
                   {i < last4Apps.length - 1 && <View style={styles.timelineLine} />}
-                  <View style={styles.timelineContent}>
-                    <RNText style={styles.timelineDate}>{formatDatePtBr(app.date)}</RNText>
-                    <RNText style={styles.timelineDetail}>
-                      {app.medication} — {app.dose}
-                      {app.observation ? ` • ${app.observation}` : ''}
-                    </RNText>
+                  <View style={[styles.timelineContent, styles.timelineContentWithEdit]}>
+                    <View>
+                      <RNText style={styles.timelineDate}>{formatDateBRT(app.date)}</RNText>
+                      <RNText style={styles.timelineDetail}>
+                        {app.medication} — {app.dose}
+                        {app.observation ? ` • ${app.observation}` : ''}
+                      </RNText>
+                    </View>
+                    {app.id ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setEditingId(app.id!);
+                          setMedication(app.medication);
+                          setDose(app.dose);
+                          setObservation(app.observation || '');
+                          setModalAplicacaoVisible(true);
+                        }}
+                        style={styles.editBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="pencil-outline" size={16} color="#8FAF8F" />
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 </View>
               ))}
@@ -445,16 +390,19 @@ export default function Glp1CompanionScreen() {
           )}
         </Animated.View>
 
-        {/* Bloco 4 — Histórico sintomas */}
-        <Animated.View style={[styles.card, entrance3]}>
-          <ThemedText style={styles.cardTitle}>Padrão de sintomas</ThemedText>
+        {/* Bloco 3 — Sintomas registrados */}
+        <Animated.View style={[styles.card, entrance2]}>
+          <ThemedText style={styles.cardTitle}>Sintomas registrados</ThemedText>
+          <RNText style={styles.sintomasRegistradosSubtitle}>
+            Registrados durante seus check-ins diários.
+          </RNText>
           {last4Symptoms.length === 0 ? (
-            <RNText style={styles.emptyText}>Seus sintomas aparecem aqui após o primeiro registro.</RNText>
+            <RNText style={styles.emptyText}>Seus sintomas aparecerão aqui após o check-in diário 🌱</RNText>
           ) : (
             <View style={styles.symptomsHistory}>
               {last4Symptoms.map((r) => (
                 <View key={r.date} style={styles.symptomsHistoryRow}>
-                  <RNText style={styles.symptomsHistoryDate}>{formatDatePtBr(r.date)}</RNText>
+                  <RNText style={styles.symptomsHistoryDate}>{formatDateBRT(r.date)}</RNText>
                   <View style={styles.symptomsChipsWrap}>
                     {r.symptoms.map((s) => (
                       <View key={s} style={styles.chipSmall}>
@@ -507,52 +455,118 @@ export default function Glp1CompanionScreen() {
 
       {/* Modal Registrar aplicação */}
       <Modal visible={modalAplicacaoVisible} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setModalAplicacaoVisible(false)}>
-          <Pressable style={styles.bottomSheet} onPress={(e) => e.stopPropagation()}>
-            <ThemedText style={styles.modalTitle}>Registrar aplicação de hoje</ThemedText>
-            <RNText style={styles.modalLabel}>Medicamento</RNText>
-            <View style={styles.chipsRow}>
-              {MEDICATIONS.map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  style={[styles.chip, medication === m && styles.chipSelected]}
-                  onPress={() => setMedication(m)}
-                  activeOpacity={0.8}
-                >
-                  <RNText style={[styles.chipText, medication === m && styles.chipTextSelected]}>{m}</RNText>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <RNText style={styles.modalLabel}>Dose</RNText>
-            <View style={styles.chipsRow}>
-              {DOSES.map((d) => (
-                <TouchableOpacity
-                  key={d}
-                  style={[styles.chip, dose === d && styles.chipSelected]}
-                  onPress={() => setDose(d)}
-                  activeOpacity={0.8}
-                >
-                  <RNText style={[styles.chipText, dose === d && styles.chipTextSelected]}>{d}</RNText>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <RNText style={styles.modalLabel}>Alguma observação? (opcional)</RNText>
-            <TextInput
-              style={styles.inputObs}
-              placeholder="Ex: local de aplicação, reação"
-              placeholderTextColor={colors.textSecondary}
-              value={observation}
-              onChangeText={setObservation}
-              multiline
-            />
-            <TouchableOpacity
-              style={[styles.btnConfirmar, (!medication || !dose) && styles.btnConfirmarDisabled]}
-              onPress={handleConfirmarAplicacao}
-              disabled={!medication || !dose}
-              activeOpacity={0.8}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1, justifyContent: 'flex-end' }}
+        >
+          <Pressable style={styles.modalOverlay} onPress={resetModal} />
+          <View style={[styles.bottomSheet, { maxHeight: '85%' }]}>
+            <ScrollView
+              ref={aplicacaoScrollRef}
+              contentContainerStyle={{ padding: 24, paddingBottom: 40 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              <RNText style={styles.btnConfirmarText}>Confirmar registro</RNText>
-            </TouchableOpacity>
+              <ThemedText style={styles.modalTitle}>
+                {editingId ? 'Editar aplicação' : 'Registrar aplicação de hoje'}
+              </ThemedText>
+              <RNText style={styles.modalLabel}>Medicamento</RNText>
+              <View style={styles.chipsRow}>
+                {MEDICATIONS.map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[styles.chip, medication === m && styles.chipSelected]}
+                    onPress={() => setMedication(m)}
+                    activeOpacity={0.8}
+                  >
+                    <RNText style={[styles.chipText, medication === m && styles.chipTextSelected]}>{m}</RNText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <RNText style={styles.modalLabel}>Dose</RNText>
+              <View style={styles.chipsRow}>
+                {DOSES.map((d) => (
+                  <TouchableOpacity
+                    key={d}
+                    style={[styles.chip, dose === d && styles.chipSelected]}
+                    onPress={() => setDose(d)}
+                    activeOpacity={0.8}
+                  >
+                    <RNText style={[styles.chipText, dose === d && styles.chipTextSelected]}>{d}</RNText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <RNText style={styles.modalLabel}>Alguma observação? (opcional)</RNText>
+              <TextInput
+                style={styles.inputObs}
+                placeholder="Ex: local de aplicação, reação"
+                placeholderTextColor={colors.textSecondary}
+                value={observation}
+                onChangeText={setObservation}
+                multiline
+                onFocus={() => {
+                  setTimeout(() => {
+                    aplicacaoScrollRef.current?.scrollToEnd({ animated: true });
+                  }, 300);
+                }}
+              />
+              {applicationError ? (
+                <RNText style={styles.errorText}>{applicationError}</RNText>
+              ) : null}
+              <TouchableOpacity
+                style={[
+                  styles.btnConfirmar,
+                  ((!medication || !dose) || savingApplication) && styles.btnConfirmarDisabled,
+                  { marginTop: 24 },
+                ]}
+                onPress={handleConfirmarAplicacao}
+                disabled={!medication || !dose || savingApplication}
+                activeOpacity={0.8}
+              >
+                {savingApplication ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <RNText style={styles.btnConfirmarText}>
+                  {editingId ? 'Salvar alterações' : 'Confirmar registro'}
+                </RNText>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Modal confirmação: segundo medicamento no mesmo dia */}
+      <Modal visible={showConfirmModal} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => setShowConfirmModal(false)}>
+          <Pressable style={styles.confirmModalBox} onPress={(e) => e.stopPropagation()}>
+            <RNText style={styles.confirmModalTitle}>Registrar outro medicamento?</RNText>
+            <RNText style={styles.confirmModalText}>
+              Você já tem uma aplicação registrada hoje. Deseja adicionar outra de medicamento diferente?
+            </RNText>
+            <View style={styles.confirmModalBtns}>
+              <TouchableOpacity
+                style={styles.confirmModalBtnCancel}
+                onPress={() => setShowConfirmModal(false)}
+                activeOpacity={0.8}
+              >
+                <RNText style={styles.confirmModalBtnCancelText}>Cancelar</RNText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmModalBtnConfirmWrap}
+                onPress={() => {
+                  setShowConfirmModal(false);
+                  doSaveApplication();
+                }}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={gradients.gradientSage}
+                  style={[StyleSheet.absoluteFill, styles.confirmModalBtnConfirm]}
+                />
+                <RNText style={styles.confirmModalBtnConfirmText}>Confirmar</RNText>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -665,6 +679,11 @@ const styles = StyleSheet.create({
   cardTitle: {
     ...typography.titleSmall,
     marginBottom: spacing.sm,
+  },
+  sintomasRegistradosSubtitle: {
+    fontSize: 13,
+    color: '#6B6B6B',
+    marginBottom: spacing.md,
   },
   cardSubtitle: {
     ...typography.bodySmall,
@@ -819,6 +838,14 @@ const styles = StyleSheet.create({
   timelineContent: {
     flex: 1,
   },
+  timelineContentWithEdit: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editBtn: {
+    padding: 8,
+  },
   timelineDate: {
     ...typography.label,
     color: colors.text,
@@ -929,10 +956,8 @@ const styles = StyleSheet.create({
   },
   bottomSheet: {
     backgroundColor: colors.white,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    padding: spacing.lg,
-    paddingBottom: 40,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   modalBox: {
     backgroundColor: colors.white,
@@ -956,7 +981,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...typography.body,
     color: colors.text,
-    minHeight: 60,
+    minHeight: 80,
     marginBottom: spacing.md,
   },
   btnConfirmar: {
@@ -1015,5 +1040,74 @@ const styles = StyleSheet.create({
   btnCompartilharText: {
     ...typography.label,
     color: colors.white,
+  },
+  confirmModalBox: {
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    padding: 24,
+    marginHorizontal: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  confirmModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  confirmModalText: {
+    fontSize: 15,
+    color: '#6B6B6B',
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  confirmModalBtns: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  confirmModalBtnCancel: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: radius.button,
+    borderWidth: 1.5,
+    borderColor: colors.sage,
+    alignItems: 'center',
+  },
+  confirmModalBtnCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.sageDark,
+  },
+  confirmModalBtnConfirmWrap: {
+    flex: 1,
+    borderRadius: radius.button,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+  },
+  confirmModalBtnConfirm: {
+    borderRadius: radius.button,
+  },
+  confirmModalBtnConfirmText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.white,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#C0392B',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  symptomSavedText: {
+    fontSize: 14,
+    color: '#5C7A5C',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
 });

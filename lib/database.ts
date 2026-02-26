@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getTodayBRT } from './utils';
 import type { CheckinData, Glp1Application, Glp1SymptomsRecord } from '@/utils/storage';
 
 // --- Helpers: map DB rows <-> app types ---
@@ -54,6 +55,7 @@ export type Profile = {
   main_fear: string | null;
   program_start_date: string | null;
   onboarding_completed: boolean;
+  weigh_frequency?: string | null;
 };
 
 export async function getProfile(): Promise<Profile | null> {
@@ -100,7 +102,7 @@ export async function getTodayCheckin(): Promise<CheckinData | null> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
-  const today = localDateStr();
+  const today = getTodayBRT();
   const { data } = await supabase
     .from('checkins')
     .select('*')
@@ -183,10 +185,11 @@ export async function getLastSevenDaysCheckinsFull(): Promise<CheckinData[]> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
-  const today = new Date();
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(today.getDate() - 6);
-  const start = sevenDaysAgo.toISOString().split('T')[0];
+  const today = getTodayBRT();
+  const [y, m, day] = today.split('-').map(Number);
+  const d = new Date(y, m - 1, day);
+  d.setDate(d.getDate() - 6);
+  const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const { data } = await supabase
     .from('checkins')
     .select('*')
@@ -209,13 +212,16 @@ export async function calculateStreak(): Promise<number> {
     .limit(90);
   if (!data || data.length === 0) return 0;
   let streak = 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
   for (let i = 0; i < data.length; i++) {
-    const expectedDate = new Date(today);
-    expectedDate.setDate(today.getDate() - i);
-    const isSameDay = data[i].date === localDateStr(expectedDate);
-    if (isSameDay) {
+    const [year, month, day] = data[i].date.split('-').map(Number);
+    const checkinDate = new Date(year, month - 1, day);
+    checkinDate.setHours(0, 0, 0, 0);
+    const expectedDate = new Date(hoje);
+    expectedDate.setDate(hoje.getDate() - i);
+    expectedDate.setHours(0, 0, 0, 0);
+    if (checkinDate.getTime() === expectedDate.getTime()) {
       streak++;
     } else {
       break;
@@ -317,29 +323,68 @@ export async function getTotalCheckinsCount(): Promise<number> {
 
 // --- Weight records ---
 
-export async function saveWeightRecord(record: {
-  date?: string;
+export type WeightRecordRow = {
+  id: string;
+  date: string;
   weight: number;
-  contexts?: string[];
+  context?: string | null;
+  notes?: string | null;
+  weigh_frequency?: string | null;
+};
+
+export async function saveWeightRecord(data: {
+  weight: number;
+  context?: string;
   notes?: string;
-}): Promise<unknown> {
+  weigh_frequency?: string;
+}): Promise<{ data?: WeightRecordRow; error: unknown | null }> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return undefined;
-  const date = record.date ?? new Date().toISOString().split('T')[0];
-  return supabase.from('weight_records').insert({
-    user_id: user.id,
-    date,
-    weight: record.weight,
-    contexts: record.contexts ?? [],
-    notes: record.notes ?? null,
-  });
+  if (!user) return { error: 'Usuário não autenticado' };
+
+  const today = getTodayBRT();
+
+  const { data: result, error } = await supabase
+    .from('weight_records')
+    .upsert(
+      {
+        user_id: user.id,
+        date: today,
+        weight: data.weight,
+        context: data.context || null,
+        notes: data.notes || null,
+      },
+      { onConflict: 'user_id,date' }
+    )
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Erro ao salvar peso:', error);
+    return { error } as { data?: WeightRecordRow; error: unknown };
+  }
+
+  await supabase
+    .from('profiles')
+    .update({ weight_current: data.weight })
+    .eq('id', user.id);
+
+  const row = (result || {}) as Record<string, unknown>;
+  return {
+    data: {
+      id: row.id as string,
+      date: row.date as string,
+      weight: row.weight as number,
+      context: (row.context as string | null) ?? null,
+      notes: (row.notes as string | null) ?? null,
+      weigh_frequency: (row.weigh_frequency as string | null) ?? null,
+    },
+    error: null,
+  };
 }
 
-export async function getWeightRecords(): Promise<
-  { id: string; date: string; weight: number; contexts: string[]; notes: string | null }[]
-> {
+export async function getWeightRecords(): Promise<WeightRecordRow[]> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -349,26 +394,65 @@ export async function getWeightRecords(): Promise<
     .select('*')
     .eq('user_id', user.id)
     .order('date', { ascending: true });
-  return (data || []).map((r: { id: string; date: string; weight: number; contexts?: string[]; notes?: string | null }) => ({
-    id: r.id,
-    date: r.date,
-    weight: r.weight,
-    contexts: r.contexts ?? [],
-    notes: r.notes ?? null,
+  return (data || []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    date: r.date as string,
+    weight: r.weight as number,
+    context: (r.context as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
+    weigh_frequency: (r.weigh_frequency as string | null) ?? null,
   }));
+}
+
+export async function getLastWeightRecord(): Promise<WeightRecordRow | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from('weight_records')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    id: row.id as string,
+    date: row.date as string,
+    weight: row.weight as number,
+    context: (row.context as string | null) ?? null,
+    notes: (row.notes as string | null) ?? null,
+    weigh_frequency: (row.weigh_frequency as string | null) ?? null,
+  };
 }
 
 // --- GLP-1 applications ---
 
-export async function saveGlp1Application(application: Glp1Application): Promise<unknown> {
+export function formatDatePtBR(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00');
+  return date.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+export async function saveGlp1Application(application: Glp1Application): Promise<{ error: unknown }> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return undefined;
-  const d = new Date(application.date);
+  if (!user) return { error: new Error('Usuário não autenticado') };
+  const [y, m, day] = application.date.split('-').map(Number);
+  const d = new Date(y, m - 1, day);
   d.setDate(d.getDate() + 7);
-  const next_application_date = d.toISOString().split('T')[0];
-  return supabase.from('glp1_applications').insert({
+  const nextY = d.getFullYear();
+  const nextM = String(d.getMonth() + 1).padStart(2, '0');
+  const nextD = String(d.getDate()).padStart(2, '0');
+  const next_application_date = `${nextY}-${nextM}-${nextD}`;
+  const { error } = await supabase.from('glp1_applications').insert({
     user_id: user.id,
     date: application.date,
     medication: application.medication,
@@ -376,6 +460,7 @@ export async function saveGlp1Application(application: Glp1Application): Promise
     notes: application.observation ?? null,
     next_application_date,
   });
+  return { error };
 }
 
 export async function getGlp1Applications(): Promise<Glp1Application[]> {
@@ -390,7 +475,8 @@ export async function getGlp1Applications(): Promise<Glp1Application[]> {
     .order('date', { ascending: false })
     .limit(10);
   return (data || []).map(
-    (r: { date: string; medication: string; dose: string; notes?: string | null }) => ({
+    (r: { id: string; date: string; medication: string; dose: string; notes?: string | null }) => ({
+      id: r.id,
       date: r.date,
       medication: r.medication,
       dose: r.dose,
@@ -399,27 +485,49 @@ export async function getGlp1Applications(): Promise<Glp1Application[]> {
   );
 }
 
+export async function updateGlp1Application(
+  id: string,
+  updates: { medication?: string; dose?: string; observation?: string | null }
+): Promise<{ error: unknown }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: new Error('Usuário não autenticado') };
+  const { error } = await supabase
+    .from('glp1_applications')
+    .update({
+      medication: updates.medication,
+      dose: updates.dose,
+      notes: updates.observation ?? null,
+    })
+    .eq('id', id)
+    .eq('user_id', user.id);
+  return { error };
+}
+
 export async function getNextGlp1ApplicationDate(): Promise<string | null> {
   const list = await getGlp1Applications();
   if (list.length === 0) return null;
   const sorted = [...list].sort((a, b) => b.date.localeCompare(a.date));
   const last = sorted[0];
-  const d = new Date(last.date);
+  const [y, m, day] = last.date.split('-').map(Number);
+  const d = new Date(y, m - 1, day);
   d.setDate(d.getDate() + 7);
-  return d.toISOString().split('T')[0];
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // --- GLP-1 symptoms ---
 
-export async function saveGlp1Symptoms(symptoms: string[]): Promise<unknown> {
+export async function saveGlp1Symptoms(symptoms: string[]): Promise<{ error: unknown }> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return undefined;
-  const today = new Date().toISOString().split('T')[0];
-  return supabase
+  if (!user) return { error: new Error('Usuário não autenticado') };
+  const today = getTodayBRT();
+  const { error } = await supabase
     .from('glp1_symptoms')
     .upsert({ user_id: user.id, date: today, symptoms }, { onConflict: 'user_id,date' });
+  return { error };
 }
 
 export async function getGlp1Symptoms(): Promise<Glp1SymptomsRecord[]> {

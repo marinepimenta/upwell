@@ -97,6 +97,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: 'Check-in',
+          headerShown: false,
         }}
       />
       <Tabs.Screen

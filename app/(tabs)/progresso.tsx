@@ -21,9 +21,9 @@ import {
   getCheckinsByMonth,
   getWeightRecords,
   getMonthlyMetrics,
-  localDateStr,
   type MonthlyMetrics,
 } from '@/lib/database';
+import { getTodayBRT } from '@/lib/utils';
 
 const chartWidth = Dimensions.get('window').width - 80;
 
@@ -92,7 +92,7 @@ export default function ProgressoScreen() {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  const todayStr = localDateStr(now);
+  const todayStr = getTodayBRT();
 
   useFocusEffect(
     useCallback(() => {

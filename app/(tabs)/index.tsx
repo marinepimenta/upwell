@@ -13,7 +13,7 @@ import Animated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/Themed';
@@ -26,12 +26,13 @@ import {
   getLastSevenDaysCheckins as getLastSevenDaysCheckinsDb,
   getCheckinsByMonth,
   getWeightRecords,
+  getLastWeightRecord,
   getWeeklyMetrics,
   calculateStreak,
-  localDateStr,
   type Profile,
   type WeeklyMetrics,
 } from '@/lib/database';
+import { getTodayBRT } from '@/lib/utils';
 
 const MARCO_90 = 90;
 
@@ -43,11 +44,13 @@ export default function InicioScreen() {
   const [last7, setLast7] = useState<{ date: string; label: string; done: boolean }[]>([]);
   const [checkinsMonth, setCheckinsMonth] = useState<CheckinData[]>([]);
   const [weightRecords, setWeightRecords] = useState<{ date: string; weight: number }[]>([]);
+  const [diasDesdeUltimaPesagem, setDiasDesdeUltimaPesagem] = useState<number | null>(null);
   const [weeklyMetrics, setWeeklyMetrics] = useState<WeeklyMetrics>({ treinos: 0, agua: 0, sono: 0, alimentacao: 0, desafiosAlimentares: 0, totalCheckins: 0 });
   const [modalResumoVisible, setModalResumoVisible] = useState(false);
   const [modalConteudoVisible, setModalConteudoVisible] = useState(false);
   const [modalSequenciaVisible, setModalSequenciaVisible] = useState(false);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -70,11 +73,12 @@ export default function InicioScreen() {
     const p = await getProfile();
     setProfile(p ?? null);
     if (p) {
-      const [str, week, todayC, records, monthCheckins, wMetrics] = await Promise.all([
+      const [str, week, todayC, records, lastWeight, monthCheckins, wMetrics] = await Promise.all([
         calculateStreak(),
         getLastSevenDaysCheckinsDb(),
         getTodayCheckinDb(),
         getWeightRecords(),
+        getLastWeightRecord(),
         getCheckinsByMonth(currentYear, currentMonth),
         getWeeklyMetrics(),
       ]);
@@ -82,6 +86,15 @@ export default function InicioScreen() {
       setLast7(week);
       setTodayCheckin(todayC ?? null);
       setWeightRecords(records.map((r) => ({ date: r.date, weight: r.weight })));
+      if (lastWeight) {
+        const dias = Math.floor(
+          (new Date().getTime() - new Date(lastWeight.date + 'T00:00:00').getTime()) /
+            (1000 * 60 * 60 * 24)
+        );
+        setDiasDesdeUltimaPesagem(dias);
+      } else {
+        setDiasDesdeUltimaPesagem(null);
+      }
       setCheckinsMonth(monthCheckins);
       if (wMetrics) setWeeklyMetrics(wMetrics);
     } else {
@@ -89,6 +102,7 @@ export default function InicioScreen() {
       setLast7([]);
       setTodayCheckin(null);
       setWeightRecords([]);
+      setDiasDesdeUltimaPesagem(null);
       setCheckinsMonth([]);
     }
     setLoading(false);
@@ -111,30 +125,36 @@ export default function InicioScreen() {
     return 'Boa noite';
   };
 
-  const dayXOf90 = (): number | null => {
-    if (!profile?.program_start_date) return null;
-    const start = new Date(profile.program_start_date);
-    const today = new Date();
-    const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    return Math.min(MARCO_90, Math.max(1, diff + 1));
+  const calcularDiaPrograma = (programStartDate: string): number => {
+    const [year, month, day] = programStartDate.split('-').map(Number);
+    const inicio = new Date(year, month - 1, day);
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    inicio.setHours(0, 0, 0, 0);
+    const diffMs = hoje.getTime() - inicio.getTime();
+    const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return Math.max(1, diffDias + 1);
   };
 
   const hasProgramStart = !!profile?.program_start_date;
 
   const proximoMarco = () => {
-    const x = dayXOf90();
-    if (x == null) return null;
-    if (x < 7) return 7;
-    if (x < 30) return 30;
-    if (x < 60) return 60;
+    if (dayX == null) return null;
+    if (dayX < 7) return 7;
+    if (dayX < 30) return 30;
+    if (dayX < 60) return 60;
     return 90;
   };
 
-  const streakFrase = () => {
-    if (streak <= 1) return 'Dia 1. Toda jornada começa aqui 🌱';
-    if (streak <= 6) return 'Você está construindo algo real.';
-    if (streak <= 29) return 'Você está entre os 10% que chegam aqui.';
-    return 'Você está entre os 3% que mantêm consistência. Sério.';
+  const getFraseIdentidade = (s: number): string => {
+    if (s === 0) return 'Faça seu primeiro check-in hoje 🌱';
+    if (s === 1) return 'Dia 1. Toda jornada começa aqui 🌱';
+    if (s < 7) return `${s} dias. Você está construindo algo real 💪`;
+    if (s < 14) return 'Você completou sua primeira semana. Isso é consistência 🌿';
+    if (s < 30) return `${s} dias seguidos. Você está entre os 20% mais consistentes 🔥`;
+    if (s < 60) return 'Um mês inteiro. Você está mudando quem você é 🏆';
+    if (s < 90) return `${s} dias. Você está entre os 5% que chegam aqui ⭐`;
+    return '90 dias. Você transformou sua vida. 🎉';
   };
 
   const weekComplete = last7.filter((d) => d.done).length;
@@ -154,7 +174,9 @@ export default function InicioScreen() {
   const proximaAplicacaoDias = usaGlp1 ? 7 : null;
 
   const userName = profile?.name?.trim() || 'Bem-vinda';
-  const dayX = dayXOf90();
+  const dayX = profile?.program_start_date
+    ? Math.min(MARCO_90, calcularDiaPrograma(profile.program_start_date))
+    : null;
   const progressPct = dayX != null ? (dayX / MARCO_90) * 100 : 0;
   const marco = proximoMarco();
 
@@ -223,7 +245,7 @@ export default function InicioScreen() {
               >
                 <RNText style={styles.streakNumber}>{streak}</RNText>
                 <RNText style={styles.streakLabel}>dias de sequência</RNText>
-                <RNText style={styles.streakFrase}>{streakFrase()}</RNText>
+                <RNText style={styles.streakFrase}>{getFraseIdentidade(streak)}</RNText>
               </TouchableOpacity>
             </Animated.View>
           </LinearGradient>
@@ -273,7 +295,7 @@ export default function InicioScreen() {
           <RNText style={styles.weekCardTitle}>Sua semana</RNText>
           <View style={styles.weekCircles}>
             {last7.map((d) => {
-              const todayStr = localDateStr(now);
+              const todayStr = getTodayBRT();
               const isToday = d.date === todayStr;
               const isFuture = d.date > todayStr;
               return (
@@ -336,31 +358,129 @@ export default function InicioScreen() {
           </View>
         </Animated.View>
 
-        {/* Card Próximos Eventos */}
-        <Animated.View style={[styles.card, styles.cardEventos, entrance4]}>
-          <Text style={styles.cardTitle}>Não esqueça</Text>
-          <View style={styles.eventItem}>
-            <RNText style={styles.eventIcon}>⚖️</RNText>
-            <View>
-              <RNText style={styles.eventTitle}>Próxima pesagem</RNText>
-              {proximaPesagemDias != null ? (
-                <RNText style={styles.eventSub}>em {proximaPesagemDias} dias</RNText>
-              ) : (
-                <RNText style={styles.eventSub}>Registre seu peso para ver quando é a próxima pesagem</RNText>
-              )}
-            </View>
-          </View>
-          {usaGlp1 && (
-            <View style={styles.eventItem}>
-              <RNText style={styles.eventIcon}>💉</RNText>
-              <View>
-                <RNText style={styles.eventTitle}>Próxima aplicação GLP-1</RNText>
-                <RNText style={styles.eventSub}>
-                  {proximaAplicacaoDias != null ? `em ${proximaAplicacaoDias} dias` : 'Registre na aba GLP-1'}
+        {/* Card Não esqueça */}
+        <Animated.View style={entrance4}>
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 20,
+              padding: 20,
+              marginBottom: 16,
+              borderLeftWidth: 4,
+              borderLeftColor: '#C4846A',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.06,
+              shadowRadius: 8,
+              elevation: 3,
+            }}
+          >
+            <RNText
+              style={{ fontSize: 17, fontWeight: '700', color: '#1A1A1A', marginBottom: 14 }}
+            >
+              Não esqueça
+            </RNText>
+
+            {/* Item Registrar peso */}
+            <TouchableOpacity
+              onPress={() => router.push('/registro-peso')}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#FAFAF8',
+                borderRadius: 14,
+                padding: 14,
+                marginBottom: 10,
+                borderWidth: 1,
+                borderColor: '#E8EDE8',
+              }}
+            >
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  backgroundColor: '#EBF3EB',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 14,
+                }}
+              >
+                <Ionicons name="scale-outline" size={22} color="#5C7A5C" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <RNText style={{ fontSize: 15, fontWeight: '700', color: '#1A1A1A' }}>
+                  Registrar peso
+                </RNText>
+                <RNText style={{ fontSize: 13, color: '#6B6B6B', marginTop: 2 }}>
+                  {diasDesdeUltimaPesagem === null
+                    ? 'Atualize seu peso atual'
+                    : diasDesdeUltimaPesagem === 0
+                      ? 'Peso atualizado hoje ✓'
+                      : diasDesdeUltimaPesagem === 1
+                        ? 'Última atualização ontem'
+                        : diasDesdeUltimaPesagem < 7
+                          ? `Atualizado há ${diasDesdeUltimaPesagem} dias`
+                          : `Não atualiza há ${diasDesdeUltimaPesagem} dias`}
                 </RNText>
               </View>
-            </View>
-          )}
+              {diasDesdeUltimaPesagem !== null && diasDesdeUltimaPesagem >= 7 ? (
+                <View
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
+                    backgroundColor: '#C4846A',
+                  }}
+                />
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color="#C8DEC8" />
+              )}
+            </TouchableOpacity>
+
+            {/* Item GLP-1 */}
+            {usaGlp1 && (
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/glp1')}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#FAFAF8',
+                  borderRadius: 14,
+                  padding: 14,
+                  borderWidth: 1,
+                  borderColor: '#E8EDE8',
+                }}
+              >
+                <View
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    backgroundColor: '#EBF3EB',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 14,
+                  }}
+                >
+                  <Ionicons name="medical-outline" size={22} color="#5C7A5C" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <RNText style={{ fontSize: 15, fontWeight: '700', color: '#1A1A1A' }}>
+                    Próxima aplicação GLP-1
+                  </RNText>
+                  <RNText style={{ fontSize: 13, color: '#6B6B6B', marginTop: 2 }}>
+                    {proximaAplicacaoDias != null
+                      ? `em ${proximaAplicacaoDias} dias`
+                      : 'Registre sua primeira aplicação'}
+                  </RNText>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C8DEC8" />
+              </TouchableOpacity>
+            )}
+          </View>
         </Animated.View>
 
         {/* Card Conteúdo do Dia */}
@@ -461,9 +581,15 @@ export default function InicioScreen() {
       </Modal>
 
       {/* Modal Sua Sequência — tela cheia */}
-      <Modal visible={modalSequenciaVisible} animationType="slide">
+      <Modal visible={modalSequenciaVisible} animationType="slide" statusBarTranslucent={false}>
         <SafeAreaView style={styles.modalSequenciaRoot} edges={['top']}>
-          <LinearGradient colors={gradients.gradientSage} style={styles.modalSequenciaHeader}>
+          <LinearGradient
+            colors={gradients.gradientSage}
+            style={[
+              styles.modalSequenciaHeader,
+              { paddingTop: insets.top + 12, paddingBottom: 16, paddingHorizontal: 20 },
+            ]}
+          >
             <View style={styles.modalSequenciaHeaderBg}>
               <Ionicons name="leaf-outline" size={140} color="rgba(255,255,255,0.18)" />
             </View>
@@ -473,10 +599,10 @@ export default function InicioScreen() {
             </View>
             <TouchableOpacity
               onPress={() => setModalSequenciaVisible(false)}
-              style={styles.modalSequenciaClose}
+              style={[styles.modalSequenciaClose, { position: 'absolute' as const, right: 20, top: insets.top + 12 }]}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Ionicons name="close" size={28} color={colors.white} />
+              <Ionicons name="close" size={24} color={colors.white} />
             </TouchableOpacity>
           </LinearGradient>
           <ScrollView
@@ -514,7 +640,7 @@ export default function InicioScreen() {
               );
             })}
             <View style={styles.modalSequenciaIdentidade}>
-              <RNText style={styles.modalSequenciaIdentidadeText}>{streakFrase()}</RNText>
+              <RNText style={styles.modalSequenciaIdentidadeText}>{getFraseIdentidade(streak)}</RNText>
             </View>
             {!todayCheckin && (
               <Animated.View style={pressCheckinSequenciaModal.animatedStyle}>

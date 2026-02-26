@@ -15,6 +15,7 @@ import { UpWellColors } from '@/constants/Colors';
 import { spacing, borderRadius, typography } from '@/constants/theme';
 import { getOnboardingData, saveOnboardingData } from '@/utils/storage';
 import { supabase } from '@/lib/supabase';
+import { getTodayBRT } from '@/lib/utils';
 
 export default function PesoScreen() {
   const [weight, setWeight] = useState('');
@@ -46,7 +47,7 @@ export default function PesoScreen() {
             weight_current: weightNum,
             glp1_status: existing?.glp1Status ?? 'never',
             main_fear: existing?.mainFear ?? 'rebound',
-            program_start_date: new Date().toISOString().split('T')[0],
+            program_start_date: getTodayBRT(),
             onboarding_completed: true,
           })
           .eq('id', user.id);

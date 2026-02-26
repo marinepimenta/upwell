@@ -290,6 +290,7 @@ const GLP1_APPLICATIONS_KEY = '@upwell:glp1_applications';
 const GLP1_SYMPTOMS_KEY = '@upwell:glp1_symptoms';
 
 export interface Glp1Application {
+  id?: string; // from DB when present
   date: string; // YYYY-MM-DD
   medication: string;
   dose: string;

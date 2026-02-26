@@ -36,7 +36,8 @@ const CARD_GLASS = {
   borderWidth: 1,
   borderColor: 'rgba(255,255,255,0.3)',
   borderRadius: 24,
-  padding: 28,
+  paddingVertical: 28,
+  paddingHorizontal: 24,
 };
 
 export default function LoginScreen() {
@@ -47,7 +48,6 @@ export default function LoginScreen() {
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [generalError, setGeneralError] = useState('');
-  const [forgotModalVisible, setForgotModalVisible] = useState(false);
   const [socialModalVisible, setSocialModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -118,7 +118,7 @@ export default function LoginScreen() {
               </View>
               <View style={styles.titleGap as ViewStyle} />
 
-              <View>
+              <View style={{ marginBottom: 12 }}>
                 <View style={styles.inputWrap as ViewStyle}>
                   <Ionicons name="mail-outline" size={18} color={ON_DARK} style={styles.inputIcon as TextStyle} />
                   <TextInput
@@ -144,9 +144,7 @@ export default function LoginScreen() {
                 ) : null}
               </View>
 
-              <View style={styles.inputGap as ViewStyle} />
-
-              <View>
+              <View style={{ marginBottom: 20 }}>
                 <View style={styles.inputWrap as ViewStyle}>
                   <Ionicons name="lock-closed-outline" size={18} color={ON_DARK} style={styles.inputIcon as TextStyle} />
                   <TextInput
@@ -184,13 +182,7 @@ export default function LoginScreen() {
                 </View>
               ) : null}
 
-              <View style={[styles.esqueciWrap as ViewStyle]}>
-                <TouchableOpacity onPress={() => setForgotModalVisible(true)} activeOpacity={0.8}>
-                  <RNText style={styles.esqueciText as TextStyle}>Esqueci minha senha</RNText>
-                </TouchableOpacity>
-              </View>
-
-              <View style={[styles.btnWrap as ViewStyle]}>
+              <View style={[styles.btnWrap as ViewStyle, { marginBottom: 20 }]}>
                 <TouchableOpacity
                   onPress={handleEntrar}
                   style={styles.btnEntrar as ViewStyle}
@@ -204,6 +196,14 @@ export default function LoginScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+
+              <TouchableOpacity
+                onPress={() => router.push('/forgot-password')}
+                style={{ marginBottom: 16, alignItems: 'center' }}
+                activeOpacity={0.8}
+              >
+                <RNText style={styles.esqueciLink as TextStyle}>Esqueci minha senha</RNText>
+              </TouchableOpacity>
 
               <View style={[styles.dividerWrap as ViewStyle]}>
                 <View style={styles.dividerLine as ViewStyle} />
@@ -237,17 +237,6 @@ export default function LoginScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
-
-      <Modal visible={forgotModalVisible} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay as ViewStyle} onPress={() => setForgotModalVisible(false)}>
-          <Pressable style={styles.modalBox as ViewStyle} onPress={(e) => e.stopPropagation()}>
-            <RNText style={styles.modalText as TextStyle}>Em breve você poderá redefinir sua senha por email.</RNText>
-            <TouchableOpacity style={styles.modalBtn as ViewStyle} onPress={() => setForgotModalVisible(false)}>
-              <RNText style={styles.modalBtnText as TextStyle}>OK</RNText>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       <Modal visible={socialModalVisible} transparent animationType="fade">
         <Pressable style={styles.modalOverlay as ViewStyle} onPress={() => setSocialModalVisible(false)}>
@@ -323,6 +312,7 @@ const styles = StyleSheet.create({
   inputPassword: { paddingRight: 8 },
   eyeButton: { padding: 8 },
   inputGap: { height: GAP_12 },
+  // spacing between card elements handled by wrapper marginBottom
   inlineErrorWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -358,12 +348,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FFFFFF',
   },
-  esqueciWrap: { alignItems: 'flex-end', marginBottom: spacing.md },
-  esqueciText: {
-    fontSize: 12,
-    fontWeight: '400',
-    lineHeight: 16,
-    color: ON_DARK_SUBTLE,
+  esqueciLink: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    textDecorationLine: 'underline',
   },
   btnWrap: { marginBottom: spacing.lg },
   btnEntrar: {

@@ -23,6 +23,7 @@ import {
   saveWeightRecord,
   type Profile,
 } from '@/lib/database';
+import { formatDateBRT } from '@/lib/utils';
 import { colors, gradients } from '@/constants/theme';
 import { usePressScale } from '@/hooks/useEntrance';
 
@@ -34,14 +35,6 @@ const GLP1_OPTIONS: { value: Glp1Status; label: string }[] = [
   { value: 'never', label: 'Não uso' },
 ];
 
-function formatDate(isoDate: string): string {
-  try {
-    const d = new Date(isoDate + 'T12:00:00');
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-  } catch {
-    return isoDate;
-  }
-}
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -214,7 +207,7 @@ export default function EditProfileScreen() {
             <RNText style={styles.fieldLabel}>Data de início</RNText>
             <TextInput
               style={[styles.input, styles.inputDisabled]}
-              value={profile?.program_start_date ? formatDate(profile.program_start_date) : '—'}
+              value={profile?.program_start_date ? formatDateBRT(profile.program_start_date) : '—'}
               editable={false}
               selectTextOnFocus={false}
             />

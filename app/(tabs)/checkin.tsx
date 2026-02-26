@@ -32,7 +32,8 @@ import {
   type HumorCheckin,
   type ContextoAlimentar,
 } from '@/utils/storage';
-import { getTodayCheckin as getTodayCheckinDb, saveCheckin as saveCheckinDb, localDateStr } from '@/lib/database';
+import { getTodayCheckin as getTodayCheckinDb, saveCheckin as saveCheckinDb, getProfile, saveGlp1Symptoms, getGlp1Symptoms } from '@/lib/database';
+import { getTodayBRT, formatDateFullBRT } from '@/lib/utils';
 
 const CONTEXTOS: { label: string; value: ContextoAlimentar }[] = [
   { label: 'Evento social', value: 'evento_social' },
@@ -41,9 +42,20 @@ const CONTEXTOS: { label: string; value: ContextoAlimentar }[] = [
   { label: 'Não tive opção melhor', value: 'nao_tive_opcao_melhor' },
 ];
 
+const GLP1_SYMPTOMS = [
+  'Náusea 🤢',
+  'Falta de apetite',
+  'Cansaço 😴',
+  'Constipação',
+  'Refluxo',
+  'Tontura',
+  'Bem! Sem sintomas ✨',
+];
+const GLP1_BEM_SEM_SINTOMAS = 'Bem! Sem sintomas ✨';
+
 export default function CheckinScreen() {
   const router = useRouter();
-  const today = localDateStr();
+  const today = getTodayBRT();
 
   const [existing, setExisting] = useState<CheckinData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +73,10 @@ export default function CheckinScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  const [showGlp1Block, setShowGlp1Block] = useState(false);
+  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
+  const [todayGlp1Symptoms, setTodayGlp1Symptoms] = useState<string[]>([]);
+
   const successScale = useSharedValue(0);
   const successOpacity = useSharedValue(0);
 
@@ -68,12 +84,17 @@ export default function CheckinScreen() {
 
   useEffect(() => {
     (async () => {
-      const [cDb, used] = await Promise.all([
+      const [cDb, used, profile, symptomsList] = await Promise.all([
         getTodayCheckinDb(),
         getShieldUsedThisWeek(),
+        getProfile(),
+        getGlp1Symptoms(),
       ]);
       setExisting(cDb ?? null);
       setShieldUsedThisWeekState(used);
+      setShowGlp1Block(profile?.glp1_status === 'using' || profile?.glp1_status === 'used');
+      const todayRec = (symptomsList || []).find((r) => r.date === today);
+      setTodayGlp1Symptoms(todayRec?.symptoms ?? []);
       setLoading(false);
     })();
   }, [today]);
@@ -103,6 +124,18 @@ export default function CheckinScreen() {
     await setShieldUsedThisWeek();
   };
 
+  const toggleGlp1Symptom = (s: string) => {
+    if (s === GLP1_BEM_SEM_SINTOMAS) {
+      setSelectedSymptoms([GLP1_BEM_SEM_SINTOMAS]);
+      return;
+    }
+    setSelectedSymptoms((prev) => {
+      const withoutBem = prev.filter((x) => x !== GLP1_BEM_SEM_SINTOMAS);
+      if (withoutBem.includes(s)) return withoutBem.filter((x) => x !== s);
+      return [...withoutBem, s];
+    });
+  };
+
   const handleConcluir = async () => {
     if (!allAnswered || submitting) return;
     setSubmitting(true);
@@ -120,6 +153,9 @@ export default function CheckinScreen() {
       };
       await saveCheckinDb(payload);
       await saveCheckinStorage(payload);
+      if (showGlp1Block && selectedSymptoms.length > 0) {
+        await saveGlp1Symptoms(selectedSymptoms);
+      }
       setShowSuccess(true);
       successOpacity.value = withSpring(1, { damping: 15, stiffness: 120 });
       successScale.value = withSequence(
@@ -136,11 +172,7 @@ export default function CheckinScreen() {
   };
 
   const formatDate = () => {
-    return new Date().toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    });
+    return formatDateFullBRT(getTodayBRT());
   };
 
   const successIconStyle = useAnimatedStyle(() => ({
@@ -217,6 +249,22 @@ export default function CheckinScreen() {
                 </View>
               ))}
             </View>
+
+            {showGlp1Block && todayGlp1Symptoms.length > 0 && (
+              <View style={styles.existingGlp1Summary}>
+                <View style={styles.glp1Badge}>
+                  <RNText style={styles.glp1BadgeText}>GLP-1 💉</RNText>
+                </View>
+                <RNText style={styles.existingRowLabel}>Sintomas</RNText>
+                <View style={styles.glp1ChipsRowReadOnly}>
+                  {todayGlp1Symptoms.map((s) => (
+                    <View key={s} style={styles.glp1ChipReadOnly}>
+                      <RNText style={styles.glp1ChipReadOnlyText}>{s}</RNText>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
 
             <RNText style={styles.existingFooter}>
               Você já fez seu check-in de hoje. Volte amanhã! 🌱
@@ -306,15 +354,16 @@ export default function CheckinScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <KeyboardAvoidingView
-        style={styles.kav}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={80}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
           style={styles.container}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           <LinearGradient colors={gradients.gradientHeader} style={styles.header}>
             <Text style={styles.headerTitle}>Check-in de hoje</Text>
@@ -433,6 +482,40 @@ export default function CheckinScreen() {
             </View>
           </View>
 
+          {showGlp1Block && (
+            <View style={styles.cardGlp1Sintomas}>
+              <View style={styles.glp1Badge}>
+                <RNText style={styles.glp1BadgeText}>GLP-1 💉</RNText>
+              </View>
+              <RNText style={styles.glp1SintomasTitle}>Como seu corpo está reagindo?</RNText>
+              <RNText style={styles.glp1SintomasSubtitle}>
+                Opcional — registrar ajuda sua médica a ajustar o tratamento.
+              </RNText>
+              <View style={styles.glp1ChipsRow}>
+                {GLP1_SYMPTOMS.map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    onPress={() => toggleGlp1Symptom(s)}
+                    style={[
+                      styles.glp1Chip,
+                      selectedSymptoms.includes(s) && styles.glp1ChipSelected,
+                    ]}
+                    activeOpacity={0.8}
+                  >
+                    <RNText
+                      style={[
+                        styles.glp1ChipText,
+                        selectedSymptoms.includes(s) && styles.glp1ChipTextSelected,
+                      ]}
+                    >
+                      {s}
+                    </RNText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
           <View style={styles.cardEscudo}>
             <Text style={styles.escudoText}>
               Todo mundo tem dias difíceis. Você tem 1 escudo por semana — ele protege sua sequência
@@ -487,7 +570,6 @@ export default function CheckinScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  kav: { flex: 1 },
   container: { flex: 1, backgroundColor: colors.background },
   loadingContainer: {
     flex: 1,
@@ -495,8 +577,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   content: {
-    padding: spacing.lg,
-    paddingBottom: 120,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    flexGrow: 1,
   },
   header: {
     paddingVertical: spacing.md,
@@ -697,6 +780,84 @@ const styles = StyleSheet.create({
   btnHumorTextSelected: {
     color: colors.sageDark,
     fontWeight: '600',
+  },
+  cardGlp1Sintomas: {
+    backgroundColor: '#FBF0EB',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#F0D4C8',
+  },
+  glp1Badge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#C4846A',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    marginBottom: 10,
+  },
+  glp1BadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  glp1SintomasTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  glp1SintomasSubtitle: {
+    fontSize: 13,
+    color: '#6B6B6B',
+    marginBottom: 16,
+  },
+  glp1ChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  glp1Chip: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: '#F0D4C8',
+  },
+  glp1ChipSelected: {
+    backgroundColor: '#C4846A',
+  },
+  glp1ChipText: {
+    fontSize: 15,
+    color: '#C4846A',
+  },
+  glp1ChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  existingGlp1Summary: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    padding: 20,
+    backgroundColor: '#FBF0EB',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F0D4C8',
+  },
+  glp1ChipsRowReadOnly: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  glp1ChipReadOnly: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: '#F0D4C8',
+  },
+  glp1ChipReadOnlyText: {
+    fontSize: 14,
+    color: '#C4846A',
   },
   cardEscudo: {
     backgroundColor: 'rgba(240,212,200,0.5)',
