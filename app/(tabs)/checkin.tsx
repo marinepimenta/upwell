@@ -32,7 +32,9 @@ import {
   type HumorCheckin,
   type ContextoAlimentar,
 } from '@/utils/storage';
-import { getTodayCheckin as getTodayCheckinDb, saveCheckin as saveCheckinDb, getProfile, saveGlp1Symptoms, getGlp1Symptoms } from '@/lib/database';
+import { getTodayCheckin as getTodayCheckinDb, saveCheckin as saveCheckinDb, getProfile, saveGlp1Symptoms, getGlp1Symptoms, calculateStreak, getWeeklyMetrics } from '@/lib/database';
+import { cancelStreakRiskReminder, saveNotificationToHistory } from '@/lib/notifications';
+import { publishAchievement } from '@/lib/community';
 import { getTodayBRT, formatDateFullBRT } from '@/lib/utils';
 
 const CONTEXTOS: { label: string; value: ContextoAlimentar }[] = [
@@ -153,6 +155,18 @@ export default function CheckinScreen() {
       };
       await saveCheckinDb(payload);
       await saveCheckinStorage(payload);
+      await cancelStreakRiskReminder();
+      await saveNotificationToHistory('checkin', 'Check-in realizado ✓', 'Você registrou seu dia com sucesso.');
+      await publishAchievement('checkin_done');
+      const newStreak = await calculateStreak();
+      if (newStreak >= 7) await publishAchievement('first_week');
+      if (newStreak === 7) await publishAchievement('streak_7');
+      if (newStreak === 30) await publishAchievement('streak_30');
+      if (newStreak === 60) await publishAchievement('streak_60');
+      if (newStreak === 90) await publishAchievement('streak_90');
+      if (escudoAtivado) await publishAchievement('shield_used');
+      const metrics = await getWeeklyMetrics();
+      if (metrics && metrics.treinos >= 5) await publishAchievement('trained_5');
       if (showGlp1Block && selectedSymptoms.length > 0) {
         await saveGlp1Symptoms(selectedSymptoms);
       }

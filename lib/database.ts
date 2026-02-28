@@ -56,6 +56,14 @@ export type Profile = {
   program_start_date: string | null;
   onboarding_completed: boolean;
   weigh_frequency?: string | null;
+  push_token?: string | null;
+  notifications_checkin?: boolean | null;
+  notifications_peso?: boolean | null;
+  notifications_glp1?: boolean | null;
+  notifications_streak?: boolean | null;
+  notifications_marcos?: boolean | null;
+  checkin_reminder_hour?: number | null;
+  checkin_reminder_minute?: number | null;
 };
 
 export async function getProfile(): Promise<Profile | null> {

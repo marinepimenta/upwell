@@ -9,7 +9,7 @@ import {
   Pressable,
   Text as RNText,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -32,6 +32,7 @@ import {
   type Profile,
   type WeeklyMetrics,
 } from '@/lib/database';
+import { getUnreadCount } from '@/lib/notifications';
 import { getTodayBRT } from '@/lib/utils';
 
 const MARCO_90 = 90;
@@ -49,6 +50,10 @@ export default function InicioScreen() {
   const [modalResumoVisible, setModalResumoVisible] = useState(false);
   const [modalConteudoVisible, setModalConteudoVisible] = useState(false);
   const [modalSequenciaVisible, setModalSequenciaVisible] = useState(false);
+  const [loadingSequenciaModal, setLoadingSequenciaModal] = useState(false);
+  const [shieldUsedThisWeek, setShieldUsedThisWeek] = useState(false);
+  const [checkinFeito, setCheckinFeito] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const now = new Date();
@@ -73,7 +78,7 @@ export default function InicioScreen() {
     const p = await getProfile();
     setProfile(p ?? null);
     if (p) {
-      const [str, week, todayC, records, lastWeight, monthCheckins, wMetrics] = await Promise.all([
+      const [str, week, todayC, records, lastWeight, monthCheckins, wMetrics, count] = await Promise.all([
         calculateStreak(),
         getLastSevenDaysCheckinsDb(),
         getTodayCheckinDb(),
@@ -81,11 +86,13 @@ export default function InicioScreen() {
         getLastWeightRecord(),
         getCheckinsByMonth(currentYear, currentMonth),
         getWeeklyMetrics(),
+        getUnreadCount(),
       ]);
       setStreak(str);
       setLast7(week);
       setTodayCheckin(todayC ?? null);
       setWeightRecords(records.map((r) => ({ date: r.date, weight: r.weight })));
+      setUnreadCount(count);
       if (lastWeight) {
         const dias = Math.floor(
           (new Date().getTime() - new Date(lastWeight.date + 'T00:00:00').getTime()) /
@@ -118,6 +125,37 @@ export default function InicioScreen() {
     }, [])
   );
 
+  useEffect(() => {
+    if (!modalSequenciaVisible) return;
+    const load = async () => {
+      setLoadingSequenciaModal(true);
+      const now = new Date();
+      const [currentStreak, checkins, todayC] = await Promise.all([
+        calculateStreak(),
+        getCheckinsByMonth(now.getFullYear(), now.getMonth() + 1),
+        getTodayCheckinDb(),
+      ]);
+      setStreak(currentStreak);
+      setCheckinFeito(!!todayC);
+
+      const hoje = new Date();
+      const diaDaSemana = hoje.getDay();
+      const inicioSemana = new Date(hoje);
+      inicioSemana.setDate(hoje.getDate() - (diaDaSemana === 0 ? 6 : diaDaSemana - 1));
+      inicioSemana.setHours(0, 0, 0, 0);
+
+      const shieldThisWeek =
+        checkins?.some((c) => {
+          const [y, m, d] = c.date.split('-').map(Number);
+          const checkinDate = new Date(y, m - 1, d);
+          return c.escudoAtivado && checkinDate >= inicioSemana;
+        }) ?? false;
+      setShieldUsedThisWeek(shieldThisWeek);
+      setLoadingSequenciaModal(false);
+    };
+    load();
+  }, [modalSequenciaVisible]);
+
   const greeting = () => {
     const h = new Date().getHours();
     if (h < 12) return 'Bom dia';
@@ -147,15 +185,26 @@ export default function InicioScreen() {
   };
 
   const getFraseIdentidade = (s: number): string => {
-    if (s === 0) return 'Faça seu primeiro check-in hoje 🌱';
-    if (s === 1) return 'Dia 1. Toda jornada começa aqui 🌱';
-    if (s < 7) return `${s} dias. Você está construindo algo real 💪`;
-    if (s < 14) return 'Você completou sua primeira semana. Isso é consistência 🌿';
-    if (s < 30) return `${s} dias seguidos. Você está entre os 20% mais consistentes 🔥`;
-    if (s < 60) return 'Um mês inteiro. Você está mudando quem você é 🏆';
-    if (s < 90) return `${s} dias. Você está entre os 5% que chegam aqui ⭐`;
-    return '90 dias. Você transformou sua vida. 🎉';
+    if (s === 0) return 'Faça seu primeiro check-in hoje';
+    if (s === 1) return 'Dia 1. Toda jornada começa aqui';
+    if (s < 7) return `${s} dias. Você está construindo algo real`;
+    if (s === 7) return 'Primeira semana completa. Isso é consistência';
+    if (s < 30) return `${s} dias seguidos. Você está entre os mais consistentes`;
+    if (s === 30) return 'Um mês inteiro. Você está mudando quem você é';
+    if (s < 60) return `${s} dias. Você está entre os 5% que chegam aqui`;
+    if (s === 60) return '60 dias. Metade da jornada. Você é incrível';
+    if (s < 90) return `${s} dias. A linha de chegada está próxima`;
+    return '90 dias. Você transformou sua vida';
   };
+
+  const MARCOS_SEQUENCIA = [7, 30, 60, 90];
+  const getMarcosStatus = (currentStreak: number) =>
+    MARCOS_SEQUENCIA.map((dias) => {
+      if (currentStreak >= dias) {
+        return { dias, status: 'conquistado' as const, faltam: 0 };
+      }
+      return { dias, status: 'pendente' as const, faltam: dias - currentStreak };
+    });
 
   const weekComplete = last7.filter((d) => d.done).length;
   const lastWeightRecord = weightRecords.length > 0 ? weightRecords[weightRecords.length - 1] : null;
@@ -207,7 +256,9 @@ export default function InicioScreen() {
         showsVerticalScrollIndicator={false}>
         {/* Header com gradiente */}
         <LinearGradient colors={gradients.gradientHeader} style={styles.header}>
-          <Text style={styles.greeting}>{greeting()}, {userName}</Text>
+          <View style={styles.headerRow}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.greeting}>{greeting()}, {userName}</Text>
           {hasProgramStart && dayX != null ? (
             <>
               <RNText style={styles.dayLabel}>Dia {dayX} de {MARCO_90}</RNText>
@@ -226,6 +277,18 @@ export default function InicioScreen() {
           ) : (
             <RNText style={styles.dayLabel}>Configure sua data de início no perfil</RNText>
           )}
+            </View>
+            <TouchableOpacity
+              onPress={() => router.push('/notificacoes')}
+              style={styles.bellBtn}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="notifications-outline" size={24} color="#5C7A5C" />
+              {unreadCount > 0 && (
+                <View style={styles.bellBadge} />
+              )}
+            </TouchableOpacity>
+          </View>
         </LinearGradient>
 
         {/* Card Sequência */}
@@ -582,89 +645,282 @@ export default function InicioScreen() {
 
       {/* Modal Sua Sequência — tela cheia */}
       <Modal visible={modalSequenciaVisible} animationType="slide" statusBarTranslucent={false}>
-        <SafeAreaView style={styles.modalSequenciaRoot} edges={['top']}>
+        <View style={styles.modalSequenciaRoot}>
+          {/* Header gradiente com streak hero */}
           <LinearGradient
-            colors={gradients.gradientSage}
-            style={[
-              styles.modalSequenciaHeader,
-              { paddingTop: insets.top + 12, paddingBottom: 16, paddingHorizontal: 20 },
-            ]}
+            colors={['#5C7A5C', '#8FAF8F']}
+            style={{
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              paddingTop: insets.top + 20,
+              paddingBottom: 32,
+              paddingHorizontal: 24,
+              alignItems: 'center',
+            }}
           >
-            <View style={styles.modalSequenciaHeaderBg}>
-              <Ionicons name="leaf-outline" size={140} color="rgba(255,255,255,0.18)" />
-            </View>
-            <View style={styles.modalSequenciaClosePlaceholder} />
-            <View style={styles.modalSequenciaHeaderCenter}>
-              <RNText style={styles.modalSequenciaTitle}>Sua Sequência</RNText>
-            </View>
             <TouchableOpacity
               onPress={() => setModalSequenciaVisible(false)}
-              style={[styles.modalSequenciaClose, { position: 'absolute' as const, right: 20, top: insets.top + 12 }]}
+              style={{ position: 'absolute', top: insets.top + 16, right: 16, padding: 4 }}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Ionicons name="close" size={24} color={colors.white} />
+              <Ionicons name="close" size={24} color="rgba(255,255,255,0.8)" />
             </TouchableOpacity>
+
+            <RNText style={{ fontSize: 16, color: 'rgba(255,255,255,0.8)', marginBottom: 4 }}>
+              Sua Sequência
+            </RNText>
+
+            {loadingSequenciaModal ? (
+              <View style={{ height: 90, justifyContent: 'center' }}>
+                <View style={{ width: 80, height: 24, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 8 }} />
+              </View>
+            ) : (
+              <Animated.Text
+                entering={ZoomIn.springify().damping(14)}
+                style={{
+                  fontSize: 80,
+                  fontWeight: '800',
+                  color: '#FFFFFF',
+                  lineHeight: 90,
+                  textAlign: 'center',
+                }}
+              >
+                {streak}
+              </Animated.Text>
+            )}
+
+            <RNText style={{ fontSize: 16, color: 'rgba(255,255,255,0.85)', marginBottom: 8 }}>
+              dias seguidos
+            </RNText>
+            <RNText style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', fontStyle: 'italic' }}>
+              Não precisa ser perfeito. Precisa ser consistente.
+            </RNText>
           </LinearGradient>
+
           <ScrollView
             style={styles.modalSequenciaScroll}
-            contentContainerStyle={styles.modalSequenciaContent}
+            contentContainerStyle={[styles.modalSequenciaContent, { paddingTop: 0, paddingBottom: 32 }]}
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.modalSequenciaCard}>
-              <RNText style={styles.modalSequenciaExplainer}>
-                Sua sequência conta quantos dias seguidos você fez check-in no UpWell. Cada dia que você registra como foi — treino, alimentação, água, sono — conta como um dia na sua sequência. Não precisa ser perfeito. Precisa ser consistente.
-              </RNText>
-            </View>
-            <View style={styles.modalSequenciaEscudo}>
-              <Ionicons name="shield-outline" size={32} color={colors.terracotta} />
-              <RNText style={styles.modalSequenciaEscudoTitle}>O Escudo</RNText>
-              <RNText style={styles.modalSequenciaEscudoText}>
-                Uma vez por semana você pode ativar o Escudo. Ele protege sua sequência em dias mais difíceis — mas você precisa ativá-lo conscientemente no check-in. Isso transforma um deslize em uma decisão.
-              </RNText>
-            </View>
-            <RNText style={styles.modalSequenciaMarcosTitle}>Seus próximos marcos</RNText>
-            {[7, 30, 60, 90].map((marco) => {
-              const atingido = streak >= marco;
-              const diasFaltam = Math.max(0, marco - streak);
-              return (
-                <View key={marco} style={styles.modalSequenciaMarcoRow}>
-                  {atingido ? (
-                    <Ionicons name="checkmark-circle" size={22} color={colors.sageDark} />
-                  ) : (
-                    <Ionicons name="lock-closed-outline" size={22} color={colors.textSecondary} />
-                  )}
-                  <RNText style={styles.modalSequenciaMarcoLabel}>
-                    {marco} dias{atingido ? ' — atingido' : ` — faltam ${diasFaltam} dias`}
-                  </RNText>
-                </View>
-              );
-            })}
-            <View style={styles.modalSequenciaIdentidade}>
-              <RNText style={styles.modalSequenciaIdentidadeText}>{getFraseIdentidade(streak)}</RNText>
-            </View>
-            {!todayCheckin && (
-              <Animated.View style={pressCheckinSequenciaModal.animatedStyle}>
-                <TouchableOpacity
-                  onPressIn={pressCheckinSequenciaModal.onPressIn}
-                  onPressOut={pressCheckinSequenciaModal.onPressOut}
-                  onPress={() => {
-                    setModalSequenciaVisible(false);
-                    router.push('/(tabs)/checkin');
+            {/* Card do Escudo simplificado */}
+            <View
+              style={{
+                backgroundColor: shieldUsedThisWeek ? '#F5F5F5' : '#FBF0EB',
+                borderRadius: 16,
+                padding: 16,
+                marginHorizontal: 20,
+                marginTop: 20,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginBottom: 6,
+                  gap: 10,
+                }}
+              >
+                <Ionicons
+                  name="shield-outline"
+                  size={20}
+                  color={shieldUsedThisWeek ? '#BDBDBD' : '#C4846A'}
+                />
+                <RNText
+                  style={{
+                    fontSize: 15,
+                    fontWeight: '700',
+                    color: shieldUsedThisWeek ? '#BDBDBD' : '#1A1A1A',
+                    flex: 1,
                   }}
-                  activeOpacity={1}
-                  style={styles.modalSequenciaBtnWrap}
                 >
-                  <LinearGradient
-                    colors={gradients.gradientTerracotta}
-                    style={[styles.modalSequenciaBtn, shadows.glowTerracotta]}
+                  {shieldUsedThisWeek ? 'Escudo usado esta semana' : 'Escudo disponível esta semana'}
+                </RNText>
+                {!shieldUsedThisWeek && (
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#5C7A5C' }} />
+                )}
+              </View>
+              <RNText style={{ fontSize: 13, color: '#6B6B6B', marginLeft: 30 }}>
+                {shieldUsedThisWeek
+                  ? 'Renova na próxima segunda-feira.'
+                  : 'Ative no check-in para proteger sua sequência.'}
+              </RNText>
+            </View>
+
+            {/* Marcos visuais horizontais */}
+            <View style={{ marginHorizontal: 20, marginTop: 24 }}>
+              <RNText style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 20 }}>
+                Seus marcos
+              </RNText>
+
+              {loadingSequenciaModal ? (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, marginBottom: 30 }}>
+                  {[1, 2, 3, 4].map((i) => (
+                    <View
+                      key={i}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 24,
+                        backgroundColor: '#F0F0F0',
+                      }}
+                    />
+                  ))}
+                </View>
+              ) : (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingHorizontal: 8,
+                  }}
+                >
+                  {MARCOS_SEQUENCIA.flatMap((marco, index) => {
+                    const conquistado = streak >= marco;
+                    const circle = (
+                      <View key={`c-${marco}`} style={{ alignItems: 'center' }}>
+                        <View
+                          style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: 24,
+                            backgroundColor: conquistado ? '#5C7A5C' : '#FFFFFF',
+                            borderWidth: conquistado ? 0 : 1.5,
+                            borderColor: '#E8EDE8',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 1 },
+                            shadowOpacity: conquistado ? 0.15 : 0.05,
+                            shadowRadius: 3,
+                            elevation: 2,
+                          }}
+                        >
+                          {conquistado ? (
+                            <Ionicons name="checkmark" size={22} color="#FFFFFF" />
+                          ) : (
+                            <Ionicons name="lock-closed-outline" size={16} color="#BDBDBD" />
+                          )}
+                        </View>
+                        <RNText
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '700',
+                            color: conquistado ? '#5C7A5C' : '#BDBDBD',
+                            marginTop: 8,
+                          }}
+                        >
+                          {marco}
+                        </RNText>
+                        <RNText style={{ fontSize: 11, color: conquistado ? '#8FAF8F' : '#BDBDBD' }}>
+                          dias
+                        </RNText>
+                      </View>
+                    );
+                    const line =
+                      index < MARCOS_SEQUENCIA.length - 1 ? (
+                        <View
+                          key={`l-${marco}`}
+                          style={{
+                            flex: 1,
+                            height: 2,
+                            marginBottom: 30,
+                            marginHorizontal: 4,
+                            backgroundColor:
+                              streak >= MARCOS_SEQUENCIA[index + 1] ? '#5C7A5C' : '#E8EDE8',
+                          }}
+                        />
+                      ) : null;
+                    return [circle, line].filter(Boolean);
+                  })}
+                </View>
+              )}
+
+              {/* Próximo marco */}
+              {!loadingSequenciaModal && (() => {
+                const proximo = MARCOS_SEQUENCIA.find((m) => streak < m);
+                if (!proximo) {
+                  return (
+                    <RNText
+                      style={{
+                        fontSize: 14,
+                        color: '#5C7A5C',
+                        textAlign: 'center',
+                        marginTop: 16,
+                        fontWeight: '600',
+                      }}
+                    >
+                      Todos os marcos conquistados! 🏆
+                    </RNText>
+                  );
+                }
+                return (
+                  <RNText style={{ fontSize: 14, color: '#6B6B6B', textAlign: 'center', marginTop: 16 }}>
+                    Faltam <RNText style={{ fontWeight: '700', color: '#5C7A5C' }}>{proximo - streak} dias</RNText> para {proximo} 🔥
+                  </RNText>
+                );
+              })()}
+            </View>
+
+            {/* Botões finais */}
+            <View style={{ marginHorizontal: 20, marginTop: 24, marginBottom: 0, gap: 10 }}>
+              {/* Frase de identidade */}
+              <LinearGradient
+                colors={['#5C7A5C', '#8FAF8F']}
+                style={{
+                  borderRadius: 14,
+                  height: 52,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 24,
+                }}
+              >
+                {loadingSequenciaModal ? (
+                  <View style={{ width: '70%', height: 16, backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 8 }} />
+                ) : (
+                  <RNText
+                    style={{
+                      fontSize: 15,
+                      fontWeight: '700',
+                      color: '#FFFFFF',
+                      textAlign: 'center',
+                    }}
+                    numberOfLines={2}
                   >
-                    <RNText style={styles.modalSequenciaBtnText}>Fazer check-in de hoje</RNText>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
+                    {getFraseIdentidade(streak)}
+                  </RNText>
+                )}
+              </LinearGradient>
+
+              {/* Check-in */}
+              <TouchableOpacity
+                onPress={() => {
+                  setModalSequenciaVisible(false);
+                  if (!checkinFeito) router.push('/(tabs)/checkin');
+                }}
+                style={{
+                  height: 52,
+                  borderRadius: 14,
+                  backgroundColor: checkinFeito ? '#EBF3EB' : '#C4846A',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 24,
+                }}
+              >
+                <RNText
+                  style={{
+                    fontSize: 15,
+                    fontWeight: '700',
+                    color: checkinFeito ? '#5C7A5C' : '#FFFFFF',
+                    textAlign: 'center',
+                  }}
+                >
+                  {checkinFeito ? 'Check-in feito hoje ✓' : 'Fazer check-in de hoje'}
+                </RNText>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -700,6 +956,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     marginBottom: spacing.lg,
     borderRadius: radius.card,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  headerLeft: { flex: 1 },
+  bellBtn: { padding: 4, position: 'relative' },
+  bellBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#C4846A',
+    borderWidth: 1.5,
+    borderColor: colors.background,
   },
   greeting: {
     ...typography.greeting,

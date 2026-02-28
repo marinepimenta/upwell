@@ -6,6 +6,12 @@ import { StatusBar } from 'expo-status-bar';
 
 import { UpWellColors } from '@/constants/Colors';
 import { supabase } from '@/lib/supabase';
+import { getProfile } from '@/lib/database';
+import {
+  registerForPushNotifications,
+  scheduleDailyCheckinReminder,
+  scheduleStreakRiskReminder,
+} from '@/lib/notifications';
 
 const UpWellTheme = {
   ...DefaultTheme,
@@ -84,11 +90,34 @@ function DeepLinkHandler() {
   return null;
 }
 
+function NotificationInit() {
+  useEffect(() => {
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const profile = await getProfile();
+      await registerForPushNotifications();
+      if (profile?.notifications_checkin !== false) {
+        await scheduleDailyCheckinReminder(
+          profile?.checkin_reminder_hour ?? 20,
+          profile?.checkin_reminder_minute ?? 0
+        );
+      }
+      if (profile?.notifications_streak !== false) {
+        await scheduleStreakRiskReminder();
+      }
+    };
+    init();
+  }, []);
+  return null;
+}
+
 export default function RootLayout() {
   return (
     <ThemeProvider value={UpWellTheme}>
       <StatusBar style="dark" />
       <DeepLinkHandler />
+      <NotificationInit />
       <Stack screenOptions={{ headerShown: false }} >
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="splash" />
@@ -101,6 +130,7 @@ export default function RootLayout() {
         <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
         <Stack.Screen name="reset-password" options={{ headerShown: false }} />
         <Stack.Screen name="registro-peso" options={{ headerShown: false }} />
+        <Stack.Screen name="notificacoes" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );

@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,9 +59,20 @@ const EDUCATIVO_ITEMS = [
   },
 ];
 
-const DISCLAIMER =
-  'Este conteúdo é informativo e não substitui orientação médica. Sempre consulte sua médica antes de tomar decisões sobre seu tratamento.';
+const DISCLAIMER_PAGE_END =
+  'Este app não substitui acompanhamento médico. Use este espaço para organizar suas informações.';
 const DISCLAIMER_SHORT = 'Este conteúdo não substitui orientação médica.';
+
+function daysUntil(nextDateStr: string): number {
+  const today = getTodayBRT();
+  const [y, m, d] = nextDateStr.split('-').map(Number);
+  const next = new Date(y, m - 1, d);
+  const [ty, tm, td] = today.split('-').map(Number);
+  const todayDate = new Date(ty, tm - 1, td);
+  next.setHours(0, 0, 0, 0);
+  todayDate.setHours(0, 0, 0, 0);
+  return Math.ceil((next.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+}
 
 // Shadow md do design system
 const shadowMd = {
@@ -273,6 +284,7 @@ export default function Glp1CompanionScreen() {
   };
 
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const handleGerarRelatorio = () => router.push('/relatorio');
 
   const handleCompartilhar = async () => {
@@ -293,56 +305,92 @@ export default function Glp1CompanionScreen() {
   const last4Symptoms = symptomsRecords.slice(0, 4);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <View style={styles.safeArea}>
+      {/* Header: gradiente sage 135deg, largura total, do topo */}
+      <LinearGradient
+        colors={['#5C7A5C', '#8FAF8F']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.headerBgAbsolute, { height: insets.top + 32 + 72 + 24 }]}
+      />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient colors={gradients.gradientHeader} style={styles.header}>
-          <ThemedText style={styles.headerTitle}>GLP-1 Companion</ThemedText>
-          <RNText style={styles.headerSub}>Seu acompanhamento personalizado 💉</RNText>
-        </LinearGradient>
-
-        <View style={styles.disclaimerBanner}>
-          <RNText style={styles.disclaimerText}>
-            ℹ️ O UpWell não substitui acompanhamento médico. Use este espaço para organizar suas informações.
-          </RNText>
+        {/* Conteúdo do header: pt-8 pb-6 px-5, ícone branco 80% + título branco, subtítulo branco 70% */}
+        <View style={[styles.headerContent, { paddingTop: insets.top + 32, paddingBottom: 24 }]}>
+          <View style={styles.headerRow}>
+            <View style={styles.headerIconWrap}>
+              <Ionicons name="medical-outline" size={20} color="rgba(255,255,255,0.8)" />
+            </View>
+            <View style={styles.headerTextWrap}>
+              <RNText style={styles.headerTitle}>GLP-1 Companion</RNText>
+              <RNText style={styles.headerSub}>Seu acompanhamento personalizado</RNText>
+            </View>
+          </View>
         </View>
 
-        {/* Bloco 1 — Próxima aplicação */}
+        {/* Conteúdo abaixo do header: fundo da tela para contraste com o gradiente */}
+        <View style={styles.contentWithBg}>
         <Animated.View style={[styles.cardProximaAplicacao, entrance0]}>
-          <ThemedText style={styles.cardTitle}>Próxima aplicação</ThemedText>
+          {/* 2a. Linha de info */}
+          <View style={styles.cardProximaTop}>
+            <View style={styles.cardProximaLeft}>
+              <View style={styles.cardProximaIconWrap}>
+                <Ionicons name="medical-outline" size={20} color="#C4846A" />
+              </View>
+              <View>
+                <RNText style={styles.cardProximaLabel}>Próxima aplicação</RNText>
+                {applications.length > 0 ? (
+                  <RNText style={styles.cardProximaMed}>
+                    {applications[0].medication} {applications[0].dose}
+                  </RNText>
+                ) : (
+                  <RNText style={styles.cardProximaMedPlaceholder}>—</RNText>
+                )}
+              </View>
+            </View>
+            {nextDate ? (
+              <View style={styles.cardProximaRight}>
+                <RNText style={styles.cardProximaEm}>em</RNText>
+                <RNText style={styles.cardProximaDias}>{daysUntil(nextDate)} dias</RNText>
+              </View>
+            ) : null}
+          </View>
+
           {nextDate ? (
             <>
-              <RNText style={styles.nextDateText}>
-                {formatNextApplicationDate(nextDate)}
-              </RNText>
-              {applications.length > 0 && (
-                <RNText style={styles.nextMedicationText}>
-                  {applications[0].medication} {applications[0].dose}
+              {/* 2b. Pill de data */}
+              <View style={styles.cardProximaDateBox}>
+                <Ionicons name="calendar-outline" size={16} color="rgba(92,122,92,0.6)" style={styles.cardProximaDateIcon} />
+                <RNText style={styles.cardProximaDateText}>
+                  {formatNextApplicationDate(nextDate)}
                 </RNText>
-              )}
+              </View>
             </>
           ) : (
             <RNText style={styles.nextDatePlaceholder}>
               Registre sua primeira aplicação abaixo
             </RNText>
           )}
+
+          {/* 2c. Botão com gradiente terracotta */}
           <Animated.View style={pressRegistrar.animatedStyle}>
             <TouchableOpacity
               onPressIn={pressRegistrar.onPressIn}
               onPressOut={pressRegistrar.onPressOut}
               onPress={() => setModalAplicacaoVisible(true)}
               activeOpacity={1}
+              style={styles.btnRegistrarWrap}
             >
               <LinearGradient
-                colors={['#A07D70', '#C8AE9F']}
+                colors={['#C4846A', '#E8A882']}
                 start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+                end={{ x: 1, y: 1 }}
                 style={styles.btnRegistrar}
               >
-                <Ionicons name="medical-outline" size={20} color={colors.white} style={styles.btnRegistrarIcon} />
+                <Ionicons name="medical-outline" size={20} color="#FFFFFF" style={styles.btnRegistrarIcon} />
                 <RNText style={styles.btnRegistrarText}>Registrar aplicação de hoje</RNText>
               </LinearGradient>
             </TouchableOpacity>
@@ -451,6 +499,12 @@ export default function Glp1CompanionScreen() {
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
+
+        {/* Disclaimer no final da página */}
+        <View style={styles.disclaimerEnd}>
+          <RNText style={styles.disclaimerEndText}>{DISCLAIMER_PAGE_END}</RNText>
+        </View>
+        </View>
       </ScrollView>
 
       {/* Modal Registrar aplicação */}
@@ -614,47 +668,147 @@ export default function Glp1CompanionScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: 100 },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  content: { paddingBottom: 100 },
+  contentWithBg: {
+    backgroundColor: colors.background,
+    paddingHorizontal: 20,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
   },
+  headerBgAbsolute: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+  },
+  headerContent: {
+    paddingHorizontal: 20,
+  },
   header: {
+    backgroundColor: '#8FAF8F',
     paddingTop: spacing.md,
-    paddingBottom: 12,
-    paddingHorizontal: spacing.sm,
-    marginBottom: 8,
-    borderRadius: radius.card,
+    paddingBottom: 20,
+    paddingHorizontal: spacing.lg,
+    marginHorizontal: -spacing.lg,
+    marginBottom: 0,
   },
-  headerTitle: {
-    ...typography.title,
-    color: colors.text,
-    marginBottom: spacing.xs,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  headerSub: {
-    ...typography.bodySmall,
-    color: colors.sage,
+  headerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  disclaimerBanner: {
-    backgroundColor: '#FFF8F0',
-    borderWidth: 1,
-    borderColor: colors.terracottaLight,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
+  headerTextWrap: {
+    flex: 1,
     marginBottom: 4,
   },
-  disclaimerText: {
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  headerSub: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  disclaimerEnd: {
+    paddingVertical: 24,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  disclaimerEndText: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  cardProximaTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  cardProximaLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+  },
+  cardProximaIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(196,132,106,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardProximaLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 2,
+  },
+  cardProximaMed: {
     fontSize: 12,
-    color: colors.terracotta,
+    color: '#6B6B6B',
+  },
+  cardProximaMedPlaceholder: {
+    fontSize: 12,
+    color: '#BDBDBD',
+  },
+  cardProximaRight: {
+    alignItems: 'flex-end',
+  },
+  cardProximaEm: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B6B6B',
+    marginBottom: 2,
+  },
+  cardProximaDias: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#5C7A5C',
+    lineHeight: 26,
+  },
+  cardProximaDateBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(232,237,232,0.5)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  cardProximaDateIcon: {
+    marginRight: 0,
+  },
+  cardProximaDateText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1A1A1A',
   },
   card: {
     backgroundColor: colors.glassBg,
@@ -666,11 +820,41 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   cardProximaAplicacao: {
-    backgroundColor: colors.white,
-    borderRadius: 20,
-    padding: spacing.lg,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: -12,
     marginBottom: spacing.lg,
-    ...shadows.card,
+    borderWidth: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 15,
+    elevation: 8,
+  },
+  btnRegistrarWrap: {
+    width: '100%',
+  },
+  btnRegistrar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderRadius: 16,
+    paddingHorizontal: spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnRegistrarIcon: {
+    marginRight: 8,
+  },
+  btnRegistrarText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   cardAplicacao: {
     borderLeftWidth: 3,
@@ -765,22 +949,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textSecondary,
     marginBottom: spacing.lg,
-  },
-  btnRegistrar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: 16,
-  },
-  btnRegistrarIcon: {
-    marginRight: 8,
-  },
-  btnRegistrarText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.white,
   },
   chipsRow: {
     flexDirection: 'row',

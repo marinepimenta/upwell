@@ -10,7 +10,7 @@ import {
 import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { LineChart } from 'react-native-chart-kit';
+import { LineChart } from 'react-native-gifted-charts';
 import { Ionicons } from '@expo/vector-icons';
 import { Text as ThemedText } from '@/components/Themed';
 import { colors, shadows, radius, spacing, typography } from '@/constants/theme';
@@ -25,33 +25,8 @@ import {
 } from '@/lib/database';
 import { getTodayBRT } from '@/lib/utils';
 
-const chartWidth = Dimensions.get('window').width - 80;
-
 const emptyMessageCheckins = 'Faça seu primeiro check-in para começar a ver seu progresso aqui 🌱';
 const emptyMessagePeso = 'Registre seu primeiro peso para ver sua evolução aqui 🌱';
-
-// Sombra md do design system
-const shadowMd = {
-  shadowColor: '#5C7A5C',
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.08,
-  shadowRadius: 12,
-  elevation: 4,
-};
-
-const chartConfig = {
-  backgroundColor: 'transparent',
-  backgroundGradientFrom: '#FFFFFF',
-  backgroundGradientTo: '#FFFFFF',
-  decimalPlaces: 1,
-  color: () => '#5C7A5C',
-  labelColor: () => '#6B6B6B',
-  strokeWidth: 2,
-  propsForDots: { r: '5', strokeWidth: '2', stroke: '#5C7A5C', fill: '#5C7A5C' },
-  propsForBackgroundLines: { stroke: 'transparent' },
-  fillShadowGradient: '#8FAF8F',
-  fillShadowGradientOpacity: 0.12,
-};
 
 const WEEKDAY_LABELS = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
 
@@ -93,6 +68,41 @@ export default function ProgressoScreen() {
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
   const todayStr = getTodayBRT();
+
+  // Dados para react-native-gifted-charts: sempre ordem cronológica (mais antigo primeiro) para linha descer quando houver perda de peso
+  // Inclui peso inicial do perfil como primeiro ponto quando existir, para o gráfico mostrar a jornada completa (ex.: 80 kg → 70 kg)
+  const sortedByDate = [...weightRecords].sort(
+    (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
+  );
+  const pesoInicialPerfil = profile?.weight_initial != null ? Number(profile.weight_initial) : null;
+  const firstRecordWeight = sortedByDate[0] ? (typeof sortedByDate[0].weight === 'number' ? sortedByDate[0].weight : Number(sortedByDate[0].weight)) : null;
+  const needInitialPoint = pesoInicialPerfil != null && sortedByDate.length >= 1 && firstRecordWeight !== pesoInicialPerfil;
+  const pointsForChart = needInitialPoint
+    ? [{ date: sortedByDate[0].date, weight: pesoInicialPerfil, isInitial: true }, ...sortedByDate]
+    : sortedByDate;
+  const chartData =
+    pointsForChart.length >= 2
+      ? pointsForChart.map((record, index) => {
+          const [y, m, d] = record.date.split('-').map(Number);
+          const label = (record as { isInitial?: boolean }).isInitial ? 'Início' : `${d}/${m}`;
+          const weight = typeof record.weight === 'number' ? record.weight : Number(record.weight);
+          return {
+            value: weight,
+            label: index % 2 === 0 ? label : '',
+            dataPointText: index === pointsForChart.length - 1 ? `${weight}kg` : '',
+          };
+        })
+      : [];
+
+  const weights = chartData.map((d) => d.value);
+  const minWeight = weights.length >= 2 ? Math.floor(Math.min(...weights)) - 2 : 0;
+  const maxWeight = weights.length >= 2 ? Math.ceil(Math.max(...weights)) + 2 : 100;
+
+  const screenWidth = Dimensions.get('window').width;
+  const contentPadding = 24 * 2;
+  const cardPadding = 20 * 2;
+  const yAxisSpace = 36;
+  const chartWidth = Math.max(200, screenWidth - contentPadding - cardPadding - yAxisSpace);
 
   useFocusEffect(
     useCallback(() => {
@@ -153,9 +163,7 @@ export default function ProgressoScreen() {
   const pesoIni = weightRecords.length > 0 ? weightRecords[0].weight : (profile?.weight_initial ?? profile?.weight_current ?? null);
   const pesoCur = weightRecords.length > 0 ? weightRecords[weightRecords.length - 1].weight : (profile?.weight_current ?? profile?.weight_initial ?? null);
   const variacao = pesoIni != null && pesoCur != null ? pesoCur - pesoIni : null;
-  const chartLabels = weightRecords.map((_, i) => `S${i + 1}`);
-  const chartValues = weightRecords.map((r) => r.weight);
-  const hasChartData = chartValues.length >= 2;
+  const hasChartData = chartData.length >= 2;
 
   // Insight alimentar
   const topContextoKey = monthlyMetrics
@@ -200,47 +208,107 @@ export default function ProgressoScreen() {
           <Text style={styles.cardPesoTitle}>Evolução do peso</Text>
           {hasWeightData ? (
             <>
-              {hasChartData && (
-                <LineChart
-                  data={{
-                    labels: chartLabels,
-                    datasets: [{ data: chartValues }],
+              {hasChartData ? (
+                <View style={{ marginTop: 8, overflow: 'hidden', borderRadius: 12 }}>
+                  <LineChart
+                    data={chartData}
+                    height={180}
+                    width={chartWidth}
+                    maxValue={maxWeight}
+                    minValue={minWeight}
+                    noOfSections={4}
+                    color="#5C7A5C"
+                    thickness={2.5}
+                    startFillColor="rgba(92,122,92,0.2)"
+                    endFillColor="rgba(92,122,92,0.0)"
+                    areaChart
+                    curved
+                    hideDataPoints={false}
+                    dataPointsColor="#5C7A5C"
+                    dataPointsRadius={4}
+                    xAxisColor="#E8EDE8"
+                    yAxisColor="transparent"
+                    yAxisTextStyle={{ color: '#BDBDBD', fontSize: 11 }}
+                    xAxisLabelTextStyle={{ color: '#BDBDBD', fontSize: 11 }}
+                    rulesColor="#F0F0F0"
+                    rulesType="solid"
+                    showVerticalLines={false}
+                    hideYAxisText={false}
+                    yAxisOffset={minWeight}
+                    textShiftY={-8}
+                    textShiftX={-4}
+                    textColor="#5C7A5C"
+                    textFontSize={11}
+                    initialSpacing={16}
+                    endSpacing={16}
+                    spacing={(chartWidth - 56) / Math.max(chartData.length - 1, 1)}
+                  />
+                </View>
+              ) : (
+                <View
+                  style={{
+                    height: 180,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#F5F8F5',
+                    borderRadius: 12,
+                    marginTop: 8,
                   }}
-                  width={chartWidth}
-                  height={180}
-                  chartConfig={chartConfig}
-                  bezier
-                  style={styles.chart}
-                  withInnerLines={false}
-                  withOuterLines={false}
-                  withVerticalLines={false}
-                  withHorizontalLines={false}
-                  withVerticalLabels={true}
-                  withHorizontalLabels={false}
-                  fromZero={false}
-                  yAxisSuffix=" kg"
-                />
-              )}
-              {pesoIni != null && pesoCur != null && (
-                <>
-                  <View style={styles.pesoRow}>
-                    <Text style={styles.pesoLabel}>Peso inicial: {pesoIni.toFixed(pesoIni % 1 === 0 ? 0 : 1)} kg</Text>
-                    <Text style={styles.pesoLabel}>Peso atual: {pesoCur.toFixed(1)} kg</Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.variacao,
-                      variacao != null && variacao <= 0 ? styles.variacaoNegativa : styles.variacaoPositiva,
-                    ]}
-                  >
-                    {variacao != null && variacao <= 0
-                      ? `▼ ${Math.abs(variacao).toFixed(1)} kg desde o início 🎉`
-                      : variacao != null
-                        ? `▲ ${variacao.toFixed(1)} kg desde o início`
-                        : ''}
+                >
+                  <Text style={{ fontSize: 32, marginBottom: 8 }}>⚖️</Text>
+                  <Text style={{ fontSize: 14, color: '#6B6B6B', textAlign: 'center' }}>
+                    Registre pelo menos 2 pesagens{'\n'}para ver seu gráfico
                   </Text>
-                </>
+                </View>
               )}
+
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  marginTop: 16,
+                  paddingTop: 16,
+                  borderTopWidth: 1,
+                  borderTopColor: '#E8EDE8',
+                }}
+              >
+                <View>
+                  <Text style={{ fontSize: 13, color: '#6B6B6B' }}>Peso inicial</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: '#1A1A1A', marginTop: 2 }}>
+                    {profile?.weight_initial != null ? `${profile.weight_initial} kg` : '—'}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 13, color: '#6B6B6B' }}>Peso atual</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: '#1A1A1A', marginTop: 2 }}>
+                    {weightRecords.length > 0
+                      ? `${weightRecords[weightRecords.length - 1].weight} kg`
+                      : profile?.weight_initial != null
+                        ? `${profile.weight_initial} kg`
+                        : '—'}
+                  </Text>
+                </View>
+              </View>
+
+              {weightRecords.length > 0 && profile?.weight_initial != null && (() => {
+                const variacaoTotal = weightRecords[weightRecords.length - 1].weight - Number(profile.weight_initial);
+                const variacaoAbs = Math.abs(variacaoTotal).toFixed(1);
+                if (Math.abs(variacaoTotal) < 0.1) return null;
+                return (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 4 }}>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: '700',
+                        color: variacaoTotal < 0 ? '#5C7A5C' : '#C4846A',
+                      }}
+                    >
+                      {variacaoTotal < 0 ? '▼' : '▲'} {variacaoAbs} kg desde o início
+                    </Text>
+                    {variacaoTotal < 0 && <Text style={{ fontSize: 15 }}>🎉</Text>}
+                  </View>
+                );
+              })()}
             </>
           ) : (
             <ThemedText style={styles.emptyText}>{emptyMessagePeso}</ThemedText>
@@ -393,7 +461,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     borderWidth: 1,
     borderColor: '#E8EDE8',
-    ...shadowMd,
+    ...shadows.card,
   },
   cardPesoTitle: {
     fontSize: 18,

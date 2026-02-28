@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, ScrollView, View, Text as RNText, ActivityIndicator } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Text as ThemedText } from '@/components/Themed';
 import { colors, gradients, shadows, radius, spacing, typography } from '@/constants/theme';
 import { useFadeSlideIn } from '@/hooks/useEntrance';
@@ -42,6 +43,7 @@ function FeedItemCard({
 export default function ComunidadeScreen() {
   const [streak, setStreak] = useState(0);
   const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
 
   const load = async () => {
     const s = await calculateStreak();
@@ -69,17 +71,34 @@ export default function ComunidadeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <View style={styles.safeArea}>
+      {/* Header: gradiente sage 135deg, largura total, do topo */}
+      <LinearGradient
+        colors={['#5C7A5C', '#8FAF8F']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.headerBgAbsolute, { height: insets.top + 32 + 72 + 24 }]}
+      />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient colors={gradients.gradientHeader} style={styles.header}>
-          <ThemedText style={styles.title}>Comunidade UpWell</ThemedText>
-          <ThemedText style={styles.subtitle}>Você não está sozinha nessa 🤍</ThemedText>
-        </LinearGradient>
+        {/* Conteúdo do header: pt-8 pb-6 px-5, título e subtítulo brancos */}
+        <View style={[styles.headerContent, { paddingTop: insets.top + 32, paddingBottom: 24 }]}>
+          <View style={styles.headerRow}>
+            <View style={styles.headerIconWrap}>
+              <Ionicons name="people-outline" size={20} color="rgba(255,255,255,0.8)" />
+            </View>
+            <View style={styles.headerTextWrap}>
+              <RNText style={styles.headerTitle}>Comunidade UpWell</RNText>
+              <RNText style={styles.headerSub}>Você não está sozinha nessa 🤍</RNText>
+            </View>
+          </View>
+        </View>
 
+        {/* Conteúdo abaixo do header: fundo da tela para contraste com o gradiente */}
+        <View style={styles.contentWithBg}>
         <View style={styles.contextCard}>
           <ThemedText style={styles.contextText}>
             Este é um espaço seguro. As conquistas são anônimas e celebradas sem comparação.
@@ -110,8 +129,9 @@ export default function ComunidadeScreen() {
             </ThemedText>
           </View>
         )}
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -122,27 +142,50 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
   content: {
-    padding: spacing.lg,
     paddingBottom: 100,
   },
-  header: {
-    paddingTop: spacing.md,
-    paddingBottom: 12,
-    paddingHorizontal: spacing.sm,
-    marginBottom: 12,
-    borderRadius: radius.card,
+  contentWithBg: {
+    backgroundColor: colors.background,
+    paddingHorizontal: 20,
   },
-  title: {
-    ...typography.title,
-    color: colors.text,
-    marginBottom: spacing.xs,
+  headerBgAbsolute: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
   },
-  subtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
+  headerContent: {
+    paddingHorizontal: 20,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTextWrap: {
+    flex: 1,
+    marginBottom: 4,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  headerSub: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
   },
   contextCard: {
     backgroundColor: colors.glassBg,
@@ -150,6 +193,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSage,
     borderRadius: radius.card,
     padding: spacing.lg,
+    marginTop: 16,
     marginBottom: spacing.xl,
     ...shadows.card,
   },

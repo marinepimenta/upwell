@@ -25,6 +25,8 @@ import {
   type WeightRecordRow,
   type Profile,
 } from '@/lib/database';
+import { scheduleWeightReminder, saveNotificationToHistory } from '@/lib/notifications';
+import { publishAchievement } from '@/lib/community';
 import { supabase } from '@/lib/supabase';
 import { formatDateBRT, formatDateShortBRT } from '@/lib/utils';
 import { colors, gradients, shadows } from '@/constants/theme';
@@ -113,7 +115,7 @@ export default function RegistroPesoScreen() {
     const { error } = await saveWeightRecord({
       weight: parseFloat(weight),
       context,
-      notes: notes.trim() || null,
+      notes: notes.trim() || undefined,
     });
 
     setLoading(false);
@@ -131,6 +133,10 @@ export default function RegistroPesoScreen() {
     }
 
     await updateProfile({ weigh_frequency: frequency });
+    const days = frequency === 'Semanalmente' ? 7 : frequency === 'Quinzenalmente' ? 15 : 30;
+    await scheduleWeightReminder(days);
+    await saveNotificationToHistory('peso', 'Peso registrado ✓', `${parseFloat(weight)} kg registrado hoje.`);
+    await publishAchievement('weight_registered');
     setSuccess(true);
   };
 

@@ -294,6 +294,15 @@ export default function PerfilScreen() {
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <RNText style={styles.modalTitle}>Configurações</RNText>
+            <TouchableOpacity
+              onPress={() => { setModalVisible(false); router.push('/notificacoes'); }}
+              style={styles.modalNotifRow}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="notifications-outline" size={20} color="#5C7A5C" />
+              <RNText style={styles.modalNotifText}>Notificações</RNText>
+              <Ionicons name="chevron-forward" size={18} color="#8FAF8F" />
+            </TouchableOpacity>
             <Animated.View style={pressLogout.animatedStyle}>
               <TouchableOpacity
                 onPressIn={pressLogout.onPressIn}
@@ -537,6 +546,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1A1A1A',
     marginBottom: 24,
+  },
+  modalNotifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    marginBottom: 16,
+    gap: 12,
+  },
+  modalNotifText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1A1A1A',
   },
   logoutBtn: {
     backgroundColor: '#DC3545',
