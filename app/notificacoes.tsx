@@ -15,7 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
-import { colors, gradients, shadows } from '@/constants/theme';
+import { colors, shadows } from '@/constants/theme';
 import { getProfile, updateProfile } from '@/lib/database';
 import {
   getNotifications,
@@ -121,18 +121,27 @@ export default function NotificacoesScreen() {
     }
   };
 
-  const timePickerDate = new Date();
-  timePickerDate.setHours(prefs.checkin_reminder_hour, prefs.checkin_reminder_minute, 0, 0);
-
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* Header gradiente sage */}
-      <LinearGradient colors={gradients.gradientSage} style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-        <RNText style={styles.headerTitle}>Notificações</RNText>
-        <View style={styles.headerPlaceholder} />
+    <View style={styles.root}>
+      {/* Header: gradiente cobre safe area; insets.top só no padding interno */}
+      <LinearGradient
+        colors={['#5C7A5C', '#8FAF8F']}
+        style={{
+          paddingTop: insets.top + 12,
+          paddingBottom: 16,
+          paddingHorizontal: 16,
+        }}
+      >
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backBtnAbsolute}
+            hitSlop={12}
+          >
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <RNText style={styles.headerTitle}>Notificações</RNText>
+        </View>
       </LinearGradient>
 
       <ScrollView
@@ -160,42 +169,69 @@ export default function NotificacoesScreen() {
           </View>
         ))}
 
-        {/* Horário do check-in */}
-        <TouchableOpacity
-          style={styles.toggleCard}
-          onPress={() => setShowTimePicker(true)}
-          activeOpacity={0.8}
-        >
-          <View style={styles.toggleIconBox}>
-            <Ionicons name="time-outline" size={22} color={colors.sageDark} />
-          </View>
-          <View style={styles.toggleTextWrap}>
-            <RNText style={styles.toggleTitle}>Horário do check-in</RNText>
-            <RNText style={styles.timeValue}>
-              {formatTime(prefs.checkin_reminder_hour, prefs.checkin_reminder_minute)}
-            </RNText>
-          </View>
-          <Ionicons name="chevron-down" size={20} color={colors.sageDark} />
-        </TouchableOpacity>
+        {/* Card horário do check-in */}
+        <View style={styles.timeCard}>
+          <TouchableOpacity
+            onPress={() => setShowTimePicker((prev) => !prev)}
+            style={styles.timeCardRow}
+            activeOpacity={0.7}
+          >
+            <View style={styles.timeCardIconBox}>
+              <Ionicons name="time-outline" size={20} color="#5C7A5C" />
+            </View>
+            <View style={styles.timeCardTextWrap}>
+              <RNText style={styles.timeCardTitle}>Horário do check-in</RNText>
+              <RNText style={styles.timeCardValue}>
+                {String(prefs.checkin_reminder_hour).padStart(2, '0')}:
+                {String(prefs.checkin_reminder_minute).padStart(2, '0')}
+              </RNText>
+            </View>
+            <Ionicons
+              name={showTimePicker ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color="#5C7A5C"
+            />
+          </TouchableOpacity>
 
-        {showTimePicker && (
-          <DateTimePicker
-            value={timePickerDate}
-            mode="time"
-            is24Hour
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={async (event, date) => {
-              setShowTimePicker(Platform.OS === 'ios');
-              if (date) {
-                const h = date.getHours();
-                const m = date.getMinutes();
-                setPrefs((prev) => ({ ...prev, checkin_reminder_hour: h, checkin_reminder_minute: m }));
-                await updateProfile({ checkin_reminder_hour: h, checkin_reminder_minute: m });
-                if (prefs.notifications_checkin) await scheduleDailyCheckinReminder(h, m);
-              }
-            }}
-          />
-        )}
+          {showTimePicker && (
+            <View style={styles.timePickerWrap}>
+              <DateTimePicker
+                value={(() => {
+                  const d = new Date();
+                  d.setHours(prefs.checkin_reminder_hour, prefs.checkin_reminder_minute, 0, 0);
+                  return d;
+                })()}
+                mode="time"
+                is24Hour={true}
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                locale="pt-BR"
+                style={styles.timePicker}
+                onChange={async (event, date) => {
+                  if (event.type === 'dismissed') {
+                    setShowTimePicker(false);
+                    return;
+                  }
+                  if (date) {
+                    const h = date.getHours();
+                    const m = date.getMinutes();
+                    setPrefs((prev) => ({
+                      ...prev,
+                      checkin_reminder_hour: h,
+                      checkin_reminder_minute: m,
+                    }));
+                    await updateProfile({
+                      checkin_reminder_hour: h,
+                      checkin_reminder_minute: m,
+                    });
+                    if (prefs.notifications_checkin) {
+                      await scheduleDailyCheckinReminder(h, m);
+                    }
+                  }
+                }}
+              />
+            </View>
+          )}
+        </View>
 
         {/* Recentes */}
         <RNText style={[styles.sectionTitle, { marginTop: 24 }]}>Recentes</RNText>
@@ -227,16 +263,13 @@ export default function NotificacoesScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  header: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    justifyContent: 'center',
   },
-  backBtn: { padding: 4 },
+  backBtnAbsolute: { position: 'absolute', left: 0, padding: 4 },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
-  headerPlaceholder: { width: 32 },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingTop: 16 },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#1A1A1A', marginBottom: 16 },
@@ -261,7 +294,40 @@ const styles = StyleSheet.create({
   toggleTextWrap: { flex: 1 },
   toggleTitle: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
   toggleSubtitle: { fontSize: 13, color: '#6B6B6B', marginTop: 2 },
-  timeValue: { fontSize: 16, fontWeight: '700', color: '#5C7A5C', marginTop: 2 },
+  timeCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginBottom: 10,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  timeCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  timeCardIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#EBF3EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeCardTextWrap: { flex: 1 },
+  timeCardTitle: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
+  timeCardValue: { fontSize: 14, fontWeight: '600', color: '#5C7A5C', marginTop: 2 },
+  timePickerWrap: {
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    paddingBottom: 8,
+  },
+  timePicker: { width: '100%' },
   emptyText: { fontSize: 15, color: '#6B6B6B', textAlign: 'center', marginTop: 32 },
   notifCard: {
     flexDirection: 'row',

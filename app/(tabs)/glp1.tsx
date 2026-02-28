@@ -33,6 +33,7 @@ import {
   updateGlp1Application,
   getGlp1Symptoms,
 } from '@/lib/database';
+import { publishAchievement } from '@/lib/community';
 import { getTodayBRT, formatDateBRT, formatDateFullBRT } from '@/lib/utils';
 
 const MEDICATIONS = ['Ozempic', 'Mounjaro', 'Wegovy', 'Outro'];
@@ -211,6 +212,7 @@ export default function Glp1CompanionScreen() {
         setSavingApplication(false);
         return;
       }
+      await publishAchievement('glp1_registered');
     }
     const apps = await getGlp1Applications();
     setApplications((apps || []).sort((a, b) => b.date.localeCompare(a.date)));

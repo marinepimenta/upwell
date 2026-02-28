@@ -6,12 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
 import { getOnboardingData } from '@/utils/storage';
-import { getProfile } from '@/lib/database';
-import {
-  registerForPushNotifications,
-  scheduleDailyCheckinReminder,
-  scheduleStreakRiskReminder,
-} from '@/lib/notifications';
 
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof Ionicons>['name'];
@@ -55,23 +49,6 @@ export default function TabLayout() {
       const status = data?.glp1Status;
       setShowGlp1Tab(status === 'using' || status === 'used');
     });
-  }, []);
-
-  useEffect(() => {
-    const initNotifications = async () => {
-      const profile = await getProfile();
-      await registerForPushNotifications();
-      if (profile?.notifications_checkin !== false) {
-        await scheduleDailyCheckinReminder(
-          profile?.checkin_reminder_hour ?? 20,
-          profile?.checkin_reminder_minute ?? 0
-        );
-      }
-      if (profile?.notifications_streak !== false) {
-        await scheduleStreakRiskReminder();
-      }
-    };
-    initNotifications();
   }, []);
 
   return (

@@ -1,157 +1,296 @@
-import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, View, Text as RNText, ActivityIndicator } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { useState, useCallback } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text as RNText,
+  TouchableOpacity,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Text as ThemedText } from '@/components/Themed';
-import { colors, gradients, shadows, radius, spacing, typography } from '@/constants/theme';
-import { useFadeSlideIn } from '@/hooks/useEntrance';
-import { getStreak } from '@/utils/storage';
+import {
+  getFeed,
+  toggleReaction,
+  formatTimeAgo,
+  type FeedItem,
+} from '@/lib/community';
 import { calculateStreak } from '@/lib/database';
+import { colors } from '@/constants/theme';
 
-const FEED_ITEMS = [
-  { id: '1', icon: '🎉', text: 'Alguém completou 30 dias consecutivos', time: 'há 12 minutos' },
-  { id: '2', icon: '💪', text: 'Alguém fez check-in por 7 dias seguidos pela primeira vez', time: 'há 34 minutos' },
-  { id: '3', icon: '🌱', text: 'Alguém completou a primeira semana na comunidade', time: 'há 1 hora' },
-  { id: '4', icon: '⚖️', text: 'Alguém registrou o peso pela quarta semana consecutiva', time: 'há 2 horas' },
-  { id: '5', icon: '🛡️', text: 'Alguém usou o escudo e manteve a sequência', time: 'há 3 horas' },
-  { id: '6', icon: '🏋️', text: 'Alguém treinou por 5 dias essa semana', time: 'há 5 horas' },
+const REACTIONS = [
+  { emoji: '💚', countKey: 'reactions_heart' as const },
+  { emoji: '🔥', countKey: 'reactions_fire' as const },
+  { emoji: '💪', countKey: 'reactions_muscle' as const },
 ];
 
-function FeedItemCard({
+function FeedItemRow({
   item,
-  delay,
+  onReact,
+  isLast,
 }: {
-  item: (typeof FEED_ITEMS)[0];
-  delay: number;
+  item: FeedItem;
+  onReact: (feedId: string, reaction: string) => void;
+  isLast?: boolean;
 }) {
-  const entrance = useFadeSlideIn(delay);
   return (
-    <Animated.View style={[styles.feedItem, entrance]}>
-      <View style={styles.feedItemLeftBorder} />
-      <RNText style={styles.feedIcon}>{item.icon}</RNText>
-      <View style={styles.feedContent}>
-        <ThemedText style={styles.feedText}>{item.text}</ThemedText>
-        <RNText style={styles.feedTime}>{item.time}</RNText>
+    <View style={[styles.feedItemRow, isLast && styles.feedItemRowLast]}>
+      <View style={styles.feedItemEmojiWrap}>
+        <RNText style={styles.feedItemEmoji}>{item.emoji}</RNText>
       </View>
-    </Animated.View>
+      <View style={styles.feedItemContent}>
+        <View style={styles.feedItemTop}>
+          <RNText style={styles.feedItemMessage} numberOfLines={3}>
+            {item.message}
+          </RNText>
+          <RNText style={styles.feedItemTime}>{formatTimeAgo(item.created_at)}</RNText>
+        </View>
+        <View style={styles.reactionsRow}>
+          {REACTIONS.map(({ emoji, countKey }) => {
+            const count = item[countKey] ?? 0;
+            const isActive = item.myReactions?.includes(emoji);
+            return (
+              <TouchableOpacity
+                key={emoji}
+                onPress={() => onReact(item.id, emoji)}
+                style={[styles.reactionChip, isActive && styles.reactionChipActive]}
+                activeOpacity={0.7}
+              >
+                <RNText style={styles.reactionEmoji}>{emoji}</RNText>
+                {count > 0 && (
+                  <RNText
+                    style={[
+                      styles.reactionCount,
+                      isActive && styles.reactionCountActive,
+                    ]}
+                  >
+                    {count}
+                  </RNText>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    </View>
   );
 }
 
 export default function ComunidadeScreen() {
-  const [streak, setStreak] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [streak, setStreak] = useState(0);
 
-  const load = async () => {
-    const s = await calculateStreak();
-    if (s > 0) setStreak(s);
-    else setStreak(await getStreak());
+  const loadFeed = useCallback(async (reset = false) => {
+    if (reset) {
+      setRefreshing(true);
+      setPage(0);
+    } else {
+      if (page === 0) setLoading(true);
+      else setLoadingMore(true);
+    }
+    const currentPage = reset ? 0 : page;
+    const data = await getFeed(currentPage, 20);
+    if (reset) {
+      setFeed(data);
+    } else {
+      setFeed((prev) => (currentPage === 0 ? data : [...prev, ...data]));
+    }
+    setHasMore(data.length === 20);
+    setPage(currentPage + 1);
     setLoading(false);
-  };
+    setRefreshing(false);
+    setLoadingMore(false);
 
-  useEffect(() => {
-    load();
-  }, []);
+    const s = await calculateStreak();
+    setStreak(s);
+  }, [page]);
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      loadFeed(true);
     }, [])
   );
 
-  if (loading) {
+  const handleReact = useCallback(async (feedId: string, reaction: string) => {
+    const column =
+      reaction === '💚'
+        ? 'reactions_heart'
+        : reaction === '🔥'
+          ? 'reactions_fire'
+          : 'reactions_muscle';
+
+    setFeed((prev) =>
+      prev.map((item) => {
+        if (item.id !== feedId) return item;
+        const alreadyReacted = item.myReactions?.includes(reaction);
+        return {
+          ...item,
+          [column]: Math.max(0, (item[column] ?? 0) + (alreadyReacted ? -1 : 1)),
+          myReactions: alreadyReacted
+            ? (item.myReactions ?? []).filter((r) => r !== reaction)
+            : [...(item.myReactions ?? []), reaction],
+        };
+      })
+    );
+    await toggleReaction(feedId, reaction);
+  }, []);
+
+  const handleLoadMore = useCallback(() => {
+    if (!loadingMore && hasMore && feed.length > 0) loadFeed(false);
+  }, [loadingMore, hasMore, feed.length, loadFeed]);
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: FeedItem; index: number }) => (
+      <View
+        style={[
+          styles.feedItemWrapper,
+          index === 0 && styles.feedCardFirst,
+          index === feed.length - 1 && styles.feedCardLast,
+        ]}
+      >
+        <FeedItemRow
+          item={item}
+          onReact={handleReact}
+          isLast={index === feed.length - 1}
+        />
+      </View>
+    ),
+    [handleReact, feed.length]
+  );
+
+  const ListHeader = useCallback(
+    () => (
+      <>
+        <View style={styles.banner}>
+          <RNText style={styles.bannerText}>
+            Este é um espaço seguro. As conquistas são anônimas e celebradas sem
+            comparação.
+          </RNText>
+        </View>
+        <RNText style={styles.sectionTitle}>Aconteceu hoje</RNText>
+      </>
+    ),
+    []
+  );
+
+  const ListFooter = useCallback(() => {
+    if (streak < 1) return null;
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.sageDark} />
+      <View style={styles.footerBanner}>
+        <RNText style={styles.footerBannerTitle}>
+          Você também tem uma conquista 🎉
+        </RNText>
+        <RNText style={styles.footerBannerBody}>
+          {streak} dias consecutivos — sua jornada faz parte dessa comunidade.
+        </RNText>
+      </View>
+    );
+  }, [streak]);
+
+  const ListEmpty = useCallback(() => {
+    if (loading) return null;
+    return (
+      <View style={styles.emptyWrap}>
+        <RNText style={styles.emptyEmoji}>🌱</RNText>
+        <RNText style={styles.emptyText}>
+          Seja a primeira a aparecer aqui!{'\n'}Faça seu check-in de hoje.
+        </RNText>
+        <TouchableOpacity
+          style={styles.emptyBtn}
+          onPress={() => router.push('/(tabs)/checkin')}
+          activeOpacity={0.8}
+        >
+          <RNText style={styles.emptyBtnText}>Fazer check-in</RNText>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [loading, router]);
+
+  if (loading && feed.length === 0) {
+    return (
+      <View style={styles.safeArea}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.sageDark} />
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.safeArea}>
-      {/* Header: gradiente sage 135deg, largura total, do topo */}
       <LinearGradient
         colors={['#5C7A5C', '#8FAF8F']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.headerBgAbsolute, { height: insets.top + 32 + 72 + 24 }]}
+        style={[styles.headerBg, { height: insets.top + 32 + 72 + 24 }]}
       />
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
+      <FlatList
+        data={feed}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        ListHeaderComponent={ListHeader}
+        ListFooterComponent={
+          <>
+            {loadingMore ? (
+              <View style={styles.loadingMore}>
+                <ActivityIndicator size="small" color={colors.sageDark} />
+              </View>
+            ) : null}
+            <ListFooter />
+          </>
+        }
+        ListEmptyComponent={ListEmpty}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadFeed(true)}
+            colors={[colors.sageDark]}
+          />
+        }
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingTop: insets.top + 32 + 72 + 24 + 16,
+            paddingBottom: insets.bottom + 100,
+          },
+        ]}
+        style={styles.list}
         showsVerticalScrollIndicator={false}
+      />
+      {/* Header content overlay */}
+      <View
+        style={[styles.headerContent, { paddingTop: insets.top + 32, paddingBottom: 24 }]}
+        pointerEvents="none"
       >
-        {/* Conteúdo do header: pt-8 pb-6 px-5, título e subtítulo brancos */}
-        <View style={[styles.headerContent, { paddingTop: insets.top + 32, paddingBottom: 24 }]}>
-          <View style={styles.headerRow}>
-            <View style={styles.headerIconWrap}>
-              <Ionicons name="people-outline" size={20} color="rgba(255,255,255,0.8)" />
-            </View>
-            <View style={styles.headerTextWrap}>
-              <RNText style={styles.headerTitle}>Comunidade UpWell</RNText>
-              <RNText style={styles.headerSub}>Você não está sozinha nessa 🤍</RNText>
-            </View>
+        <View style={styles.headerRow}>
+          <View style={styles.headerIconWrap}>
+            <Ionicons name="people-outline" size={20} color="rgba(255,255,255,0.8)" />
+          </View>
+          <View style={styles.headerTextWrap}>
+            <RNText style={styles.headerTitle}>Comunidade UpWell</RNText>
+            <RNText style={styles.headerSub}>Você não está sozinha nessa 🤍</RNText>
           </View>
         </View>
-
-        {/* Conteúdo abaixo do header: fundo da tela para contraste com o gradiente */}
-        <View style={styles.contentWithBg}>
-        <View style={styles.contextCard}>
-          <ThemedText style={styles.contextText}>
-            Este é um espaço seguro. As conquistas são anônimas e celebradas sem comparação.
-          </ThemedText>
-        </View>
-
-        <ThemedText style={styles.feedTitle}>Aconteceu hoje na comunidade</ThemedText>
-        <View style={styles.feed}>
-          {FEED_ITEMS.map((item, index) => (
-            <FeedItemCard key={item.id} item={item} delay={index * 60} />
-          ))}
-        </View>
-
-        {streak >= 7 ? (
-          <LinearGradient
-            colors={gradients.gradientTerracotta}
-            style={[styles.userCard, styles.userCardConquista, shadows.glowTerracotta]}
-          >
-            <ThemedText style={styles.userCardTitleWhite}>Você também tem uma conquista hoje 🎉</ThemedText>
-            <RNText style={styles.userCardBodyWhite}>
-              {streak} dias de sequência. Sua jornada faz parte dessa comunidade.
-            </RNText>
-          </LinearGradient>
-        ) : (
-          <View style={[styles.userCard, styles.userCardEncourage]}>
-            <ThemedText style={styles.userCardBody}>
-              Continue fazendo check-ins — sua primeira conquista na comunidade está chegando 🌱
-            </ThemedText>
-          </View>
-        )}
-        </View>
-      </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  content: {
-    paddingBottom: 100,
-  },
-  contentWithBg: {
-    backgroundColor: colors.background,
-    paddingHorizontal: 20,
-  },
-  headerBgAbsolute: {
+  safeArea: { flex: 1, backgroundColor: '#FAFAF8' },
+  headerBg: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -159,14 +298,8 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
   },
-  headerContent: {
-    paddingHorizontal: 20,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
+  headerContent: { paddingHorizontal: 20, position: 'absolute', left: 0, right: 0, top: 0 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerIconWrap: {
     width: 40,
     height: 40,
@@ -174,109 +307,145 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTextWrap: {
-    flex: 1,
-    marginBottom: 4,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  headerSub: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  contextCard: {
-    backgroundColor: colors.glassBg,
-    borderWidth: 1,
-    borderColor: colors.borderSage,
-    borderRadius: radius.card,
-    padding: spacing.lg,
+  headerTextWrap: { flex: 1, marginBottom: 4 },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#FFFFFF' },
+  headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
+  list: { flex: 1, backgroundColor: 'transparent' },
+  listContent: { paddingHorizontal: 16 },
+  banner: {
+    backgroundColor: '#EBF3EB',
+    borderRadius: 14,
     marginTop: 16,
-    marginBottom: spacing.xl,
-    ...shadows.card,
+    marginBottom: 16,
+    padding: 14,
   },
-  contextText: {
-    ...typography.body,
-    color: colors.text,
+  bannerText: {
+    fontSize: 13,
+    color: '#5C7A5C',
     textAlign: 'center',
+    lineHeight: 20,
   },
-  feedTitle: {
-    ...typography.titleSmall,
-    color: colors.text,
-    marginBottom: spacing.md,
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 12,
   },
-  feed: {},
-  feedItem: {
+  feedItemWrapper: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  feedCardFirst: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+  },
+  feedCardLast: {
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  feedItemRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: colors.white,
-    borderRadius: 16,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    overflow: 'hidden',
-    position: 'relative',
-    ...shadows.card,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F8F5',
   },
-  feedItemLeftBorder: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
-    backgroundColor: colors.sage,
+  feedItemRowLast: {
+    borderBottomWidth: 0,
   },
-  feedIcon: {
-    fontSize: 24,
-    marginRight: spacing.sm,
-    marginLeft: spacing.xs,
+  feedItemEmojiWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EBF3EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  feedContent: {
+  feedItemEmoji: { fontSize: 22 },
+  feedItemContent: { flex: 1, minWidth: 0 },
+  feedItemTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginRight: 8,
+  },
+  feedItemMessage: {
+    fontSize: 15,
+    color: '#1A1A1A',
+    lineHeight: 22,
     flex: 1,
   },
-  feedText: {
-    ...typography.body,
-    color: colors.text,
-    marginBottom: spacing.xs,
+  feedItemTime: { fontSize: 12, color: '#BDBDBD', flexShrink: 0 },
+  reactionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  reactionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F5F8F5',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  feedTime: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  userCard: {
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    marginTop: spacing.md,
-  },
-  userCardConquista: {
-    overflow: 'hidden',
-  },
-  userCardEncourage: {
-    backgroundColor: colors.sageLight,
-    opacity: 0.9,
+  reactionChipActive: {
+    backgroundColor: '#EBF3EB',
     borderWidth: 1,
-    borderColor: colors.borderSage,
+    borderColor: '#5C7A5C',
   },
-  userCardTitleWhite: {
-    ...typography.titleSmall,
-    color: colors.white,
-    marginBottom: spacing.sm,
+  reactionEmoji: { fontSize: 14 },
+  reactionCount: { fontSize: 12, color: '#6B6B6B', fontWeight: '600' },
+  reactionCountActive: { color: '#5C7A5C' },
+  footerBanner: {
+    backgroundColor: '#C4846A',
+    borderRadius: 16,
+    margin: 16,
+    padding: 16,
   },
-  userCardBodyWhite: {
-    ...typography.body,
-    color: colors.white,
+  footerBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
   },
-  userCardBody: {
-    ...typography.body,
-    color: colors.text,
+  footerBannerBody: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    lineHeight: 20,
   },
+  loadingMore: { paddingVertical: 16, alignItems: 'center' },
+  emptyWrap: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  emptyEmoji: { fontSize: 48, marginBottom: 16 },
+  emptyText: {
+    fontSize: 15,
+    color: '#6B6B6B',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  emptyBtn: {
+    backgroundColor: '#5C7A5C',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  emptyBtnText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: '#FAFAF8',
   },
 });

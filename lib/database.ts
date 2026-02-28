@@ -397,11 +397,15 @@ export async function getWeightRecords(): Promise<WeightRecordRow[]> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('weight_records')
     .select('*')
     .eq('user_id', user.id)
     .order('date', { ascending: true });
+  if (error) {
+    console.error('Erro getWeightRecords:', error);
+    return [];
+  }
   return (data || []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
     date: r.date as string,

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, Fragment } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -10,7 +10,7 @@ import {
 import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { LineChart } from 'react-native-gifted-charts';
+import Svg, { Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { Text as ThemedText } from '@/components/Themed';
 import { colors, shadows, radius, spacing, typography } from '@/constants/theme';
@@ -57,6 +57,169 @@ const CONTEXTOS_MAP: Record<string, string> = {
   'nao_tive_opcao_melhor': 'falta de opção',
 };
 
+function WeightChart({
+  records,
+  initialWeight,
+}: {
+  records: { date: string; weight: number }[];
+  initialWeight?: number | null;
+}) {
+  const safeRecords = (records ?? [])
+    .filter((r) => r && r.date != null && !Number.isNaN(Number(r.weight)))
+    .map((r) => ({ date: String(r.date), weight: Number(r.weight) }));
+
+  const sorted = [...safeRecords].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  // Inclui peso inicial do perfil como primeiro ponto quando existe e é diferente do primeiro registro (para desenhar a linha 60 → 55)
+  const initial = initialWeight != null && !Number.isNaN(Number(initialWeight)) ? Number(initialWeight) : null;
+  const needInitialPoint =
+    initial != null && sorted.length >= 1 && initial !== sorted[0].weight;
+  const points = needInitialPoint
+    ? [{ date: sorted[0].date, weight: initial }, ...sorted]
+    : sorted;
+
+  const screenWidth = Dimensions.get('window').width;
+  const width = screenWidth - 48 - 40;
+  const height = 160;
+  const paddingLeft = 36;
+  const paddingRight = 52;
+  const paddingTop = 12;
+  const paddingBottom = 24;
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+
+  if (points.length < 1) {
+    return (
+      <View
+        style={{
+          height,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#F5F8F5',
+          borderRadius: 12,
+        }}
+      >
+        <Text style={{ fontSize: 14, color: '#6B6B6B', textAlign: 'center' }}>
+          Registre sua primeira pesagem{'\n'}para ver seu gráfico
+        </Text>
+      </View>
+    );
+  }
+
+  const weights = points.map((r) => Number(r.weight));
+  const minW = Math.min(...weights);
+  const maxW = Math.max(...weights);
+  const margin = Math.max((maxW - minW) * 0.3, 2);
+  const yMin = minW - margin;
+  const yMax = maxW + margin;
+  const yRange = yMax - yMin;
+
+  const toY = (w: number) =>
+    paddingTop + chartHeight - ((w - yMin) / yRange) * chartHeight;
+
+  const toX = (i: number) =>
+    points.length === 1
+      ? paddingLeft + chartWidth / 2
+      : paddingLeft + (i / Math.max(points.length - 1, 1)) * chartWidth;
+
+  const pathD =
+    points.length >= 2
+      ? points
+          .map((r, i) => {
+            const x = toX(i);
+            const y = toY(Number(r.weight));
+            return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+          })
+          .join(' ')
+      : '';
+
+  const yLabels = [
+    Math.round(yMax),
+    Math.round(yMin + yRange / 2),
+    Math.round(yMin),
+  ];
+
+  return (
+    <Svg width={width} height={height}>
+      {yLabels.map((label, i) => {
+        const y = toY(label);
+        return (
+          <Fragment key={i}>
+            <Line
+              x1={paddingLeft}
+              y1={y}
+              x2={width - paddingRight}
+              y2={y}
+              stroke="#F0F0F0"
+              strokeWidth={1}
+            />
+            <SvgText
+              x={paddingLeft - 4}
+              y={y + 4}
+              fontSize={10}
+              fill="#BDBDBD"
+              textAnchor="end"
+            >
+              {label}
+            </SvgText>
+          </Fragment>
+        );
+      })}
+
+      {pathD ? (
+        <Path
+          d={pathD}
+          stroke="#5C7A5C"
+          strokeWidth={2.5}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : null}
+
+      {points.map((r, i) => (
+        <Circle
+          key={i}
+          cx={toX(i)}
+          cy={toY(Number(r.weight))}
+          r={4}
+          fill="#5C7A5C"
+        />
+      ))}
+
+      <SvgText
+        x={toX(points.length - 1) - 8}
+        y={toY(Number(points[points.length - 1].weight)) - 10}
+        fontSize={11}
+        fill="#5C7A5C"
+        fontWeight="700"
+        textAnchor="end"
+      >
+        {points[points.length - 1].weight}kg
+      </SvgText>
+
+      <SvgText
+        x={toX(0)}
+        y={height - 4}
+        fontSize={11}
+        fill="#BDBDBD"
+        textAnchor="middle"
+      >
+        Início
+      </SvgText>
+      <SvgText
+        x={toX(points.length - 1)}
+        y={height - 4}
+        fontSize={11}
+        fill="#BDBDBD"
+        textAnchor="middle"
+      >
+        Hoje
+      </SvgText>
+    </Svg>
+  );
+}
+
 export default function ProgressoScreen() {
   const [loading, setLoading] = useState(true);
   const [checkins, setCheckins] = useState<CheckinData[]>([]);
@@ -69,59 +232,41 @@ export default function ProgressoScreen() {
   const month = now.getMonth() + 1;
   const todayStr = getTodayBRT();
 
-  // Dados para react-native-gifted-charts: sempre ordem cronológica (mais antigo primeiro) para linha descer quando houver perda de peso
-  // Inclui peso inicial do perfil como primeiro ponto quando existir, para o gráfico mostrar a jornada completa (ex.: 80 kg → 70 kg)
   const sortedByDate = [...weightRecords].sort(
     (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
   );
-  const pesoInicialPerfil = profile?.weight_initial != null ? Number(profile.weight_initial) : null;
-  const firstRecordWeight = sortedByDate[0] ? (typeof sortedByDate[0].weight === 'number' ? sortedByDate[0].weight : Number(sortedByDate[0].weight)) : null;
-  const needInitialPoint = pesoInicialPerfil != null && sortedByDate.length >= 1 && firstRecordWeight !== pesoInicialPerfil;
-  const pointsForChart = needInitialPoint
-    ? [{ date: sortedByDate[0].date, weight: pesoInicialPerfil, isInitial: true }, ...sortedByDate]
-    : sortedByDate;
-  const chartData =
-    pointsForChart.length >= 2
-      ? pointsForChart.map((record, index) => {
-          const [y, m, d] = record.date.split('-').map(Number);
-          const label = (record as { isInitial?: boolean }).isInitial ? 'Início' : `${d}/${m}`;
-          const weight = typeof record.weight === 'number' ? record.weight : Number(record.weight);
-          return {
-            value: weight,
-            label: index % 2 === 0 ? label : '',
-            dataPointText: index === pointsForChart.length - 1 ? `${weight}kg` : '',
-          };
-        })
-      : [];
-
-  const weights = chartData.map((d) => d.value);
-  const minWeight = weights.length >= 2 ? Math.floor(Math.min(...weights)) - 2 : 0;
-  const maxWeight = weights.length >= 2 ? Math.ceil(Math.max(...weights)) + 2 : 100;
-
-  const screenWidth = Dimensions.get('window').width;
-  const contentPadding = 24 * 2;
-  const cardPadding = 20 * 2;
-  const yAxisSpace = 36;
-  const chartWidth = Math.max(200, screenWidth - contentPadding - cardPadding - yAxisSpace);
 
   useFocusEffect(
     useCallback(() => {
       const load = async () => {
         setLoading(true);
-        const [p, records, list, m] = await Promise.all([
-          getProfile(),
-          getWeightRecords(),
-          getCheckinsByMonth(year, month),
-          getMonthlyMetrics(),
-        ]);
-        setProfile(p ? { weight_initial: p.weight_initial ?? null, weight_current: p.weight_current ?? null } : null);
-        setWeightRecords(records.map((r) => ({ date: r.date, weight: r.weight })));
-        setCheckins(list);
-        setMonthlyMetrics(m);
-        setLoading(false);
+        try {
+          const [p, records, list, m] = await Promise.all([
+            getProfile(),
+            getWeightRecords(),
+            getCheckinsByMonth(year, month),
+            getMonthlyMetrics(),
+          ]);
+          setProfile(p ? { weight_initial: p.weight_initial ?? null, weight_current: p.weight_current ?? null } : null);
+          const normalized = (records || []).map((r) => ({
+            date: String(r?.date ?? ''),
+            weight: Number(r?.weight),
+          })).filter((r) => r.date && !Number.isNaN(r.weight));
+          setWeightRecords(normalized);
+          if (__DEV__) {
+            console.log('Progresso: records carregados', records?.length, '→ normalized', normalized.length, normalized);
+          }
+          setCheckins(list ?? []);
+          setMonthlyMetrics(m ?? null);
+        } catch (e) {
+          if (__DEV__) console.warn('Progresso load error:', e);
+          setWeightRecords([]);
+        } finally {
+          setLoading(false);
+        }
       };
       load();
-    }, [])
+    }, [year, month])
   );
 
   // Calendário construído a partir dos dates reais (sem parsear timezone)
@@ -163,7 +308,6 @@ export default function ProgressoScreen() {
   const pesoIni = weightRecords.length > 0 ? weightRecords[0].weight : (profile?.weight_initial ?? profile?.weight_current ?? null);
   const pesoCur = weightRecords.length > 0 ? weightRecords[weightRecords.length - 1].weight : (profile?.weight_current ?? profile?.weight_initial ?? null);
   const variacao = pesoIni != null && pesoCur != null ? pesoCur - pesoIni : null;
-  const hasChartData = chartData.length >= 2;
 
   // Insight alimentar
   const topContextoKey = monthlyMetrics
@@ -191,6 +335,9 @@ export default function ProgressoScreen() {
     );
   }
 
+  console.log('weightRecords:', weightRecords);
+  console.log('weightRecords.length:', weightRecords?.length);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
@@ -208,59 +355,12 @@ export default function ProgressoScreen() {
           <Text style={styles.cardPesoTitle}>Evolução do peso</Text>
           {hasWeightData ? (
             <>
-              {hasChartData ? (
-                <View style={{ marginTop: 8, overflow: 'hidden', borderRadius: 12 }}>
-                  <LineChart
-                    data={chartData}
-                    height={180}
-                    width={chartWidth}
-                    maxValue={maxWeight}
-                    minValue={minWeight}
-                    noOfSections={4}
-                    color="#5C7A5C"
-                    thickness={2.5}
-                    startFillColor="rgba(92,122,92,0.2)"
-                    endFillColor="rgba(92,122,92,0.0)"
-                    areaChart
-                    curved
-                    hideDataPoints={false}
-                    dataPointsColor="#5C7A5C"
-                    dataPointsRadius={4}
-                    xAxisColor="#E8EDE8"
-                    yAxisColor="transparent"
-                    yAxisTextStyle={{ color: '#BDBDBD', fontSize: 11 }}
-                    xAxisLabelTextStyle={{ color: '#BDBDBD', fontSize: 11 }}
-                    rulesColor="#F0F0F0"
-                    rulesType="solid"
-                    showVerticalLines={false}
-                    hideYAxisText={false}
-                    yAxisOffset={minWeight}
-                    textShiftY={-8}
-                    textShiftX={-4}
-                    textColor="#5C7A5C"
-                    textFontSize={11}
-                    initialSpacing={16}
-                    endSpacing={16}
-                    spacing={(chartWidth - 56) / Math.max(chartData.length - 1, 1)}
-                  />
-                </View>
-              ) : (
-                <View
-                  style={{
-                    height: 180,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: '#F5F8F5',
-                    borderRadius: 12,
-                    marginTop: 8,
-                  }}
-                >
-                  <Text style={{ fontSize: 32, marginBottom: 8 }}>⚖️</Text>
-                  <Text style={{ fontSize: 14, color: '#6B6B6B', textAlign: 'center' }}>
-                    Registre pelo menos 2 pesagens{'\n'}para ver seu gráfico
-                  </Text>
-                </View>
-              )}
+              <View style={{ marginTop: 8, overflow: 'hidden', borderRadius: 12 }}>
+                <WeightChart
+                records={weightRecords ?? []}
+                initialWeight={profile?.weight_initial}
+              />
+              </View>
 
               <View
                 style={{
